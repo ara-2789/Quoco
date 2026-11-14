@@ -1,0 +1,14 @@
+#!/bin/bash
+cd <worktree>
+OUT=$HOME/quoco-records/052-build/b2b
+{
+echo "P5 reads, $(date -u +%FT%TZ), HEAD $(git rev-parse HEAD)"
+for f in docs/reviews/052-design/kind-removal-plan.md docs/reviews/052-design/052-tests-changing-meaning.txt docs/reviews/052-design/052-design-review-round-3.md docs/reviews/052-design/052-rev8-verification-pass.md docs/reviews/052-sql-review-round-1.md docs/reviews/052-sql-review-package.md docs/reviews/052-test-db-apply-record.md CLAUDE.md; do
+  echo "$(shasum -a 256 $f | cut -d' ' -f1)  $f  ($(wc -c < $f | tr -d ' ') bytes)"
+done
+echo "expected plan sha256: 0cb3bc14afc70e3052d98c7dd75badc510019a4c3e2ae32a0fb9e52c0eeb83ed"
+echo "CLAUDE.md section 0 / section 6 locations in this worktree copy:"
+grep -n -E '^## (0\.|6\.|7\.)' CLAUDE.md
+echo "note: CLAUDE.md sections 0 and 6 were read as supplied in the session-start context (same text); the file sha256 above pins the worktree copy."
+} > $OUT/p5-reads.txt
+cat $OUT/p5-reads.txt

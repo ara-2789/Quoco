@@ -1,0 +1,14 @@
+HEAD f007f61dc900b0d6c3ba997c5c93c628fb7f6c93
+ed3f937eba4e40eece9d0752b01511adc8af53475b348bef2ea3a48fa6ec3748  test/unit/lint-migrations-rule10.test.ts
+b7ee67e636f80c87df3dde0cfbc90b83b7ccd19c36119d02bf4821368f72d005  scripts/lint-migrations.mjs
+
+ RUN  v3.2.7 <repo>
+
+ ✓ test/unit/lint-migrations-rule10.test.ts (11 tests) 58ms
+
+ Test Files  1 passed (1)
+      Tests  11 passed (11)
+   Start at  14:34:09
+   Duration  187ms (transform 28ms, setup 0ms, collect 16ms, tests 58ms, environment 0ms, prepare 18ms)
+
+json: 11 passed 0 failed

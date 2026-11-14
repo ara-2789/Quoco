@@ -1,0 +1,8 @@
+#!/bin/bash
+# runfiles.sh <tag> <file>... : each file its own vitest process; prints the summary of each
+tag=$1; shift
+for f in "$@"; do
+  b=$(basename $f .test.ts); b=$(basename $b .test.tsx)
+  echo "######## $f"
+  LINES_MAX=12 bash $HOME/.claude/jobs/2a6b4d65/tmp/vt.sh "$tag-$b" "$f" | grep -E "Test Files|Tests  |vitest exit|FAIL|AssertionError|Error:" | cut -c1-230
+done

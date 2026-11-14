@@ -1,0 +1,24 @@
+#!/bin/bash
+. $HOME/.claude/jobs/2a6b4d65/tmp/lib.sh
+S=$T/sql
+F=$OUT/step6d-pre-reprobe.txt
+{
+hdr
+echo "TIME RULE: IST now = $(TZ=Asia/Kolkata date +%H:%M)"
+echo "CI in progress: $(cd $WT && gh run list --status in_progress --json databaseId --jq length) ; queued: $(cd $WT && gh run list --status queued --json databaseId --jq length)"
+Q "pre-052 md5s" $S/1a.sql
+Q "052 objects absent" $S/1b.sql
+Q "ledger tail (must end 051)" $S/1f.sql
+Q "counts" $S/1c1.sql
+Q "A3b deliveries per document" $S/1c2.sql
+Q "A3b offenders" $S/1c3.sql
+Q "invoice-flow sessions (total)" $S/1d.sql
+Q "invoice-flow sessions by tenant" $S/l4.sql
+Q "fingerprint (must equal fa50d7fd831aea1eb8f4271e3f25bac6)" $S/fp.sql
+Q "comments hash (must equal 9b773b739dc533485331dd0dc2c56134)" $S/cm.sql
+Q "#349 counts (1g baseline: 12 @quoco.test auth users, 4 ZZTestCapture- users, 4 zz-test-capture- tenants; plus this run's b2a set)" $S/1g.sql
+Q "#349 tenants zz-test-*" $S/l1.sql
+Q "#349 auth users" $S/l2.sql
+Q "#349 public users ZZTestCapture-" $S/l3.sql
+} > $F 2>&1
+grep -v -E "Initialising|boundary|warning|^(SQL:|RESULT:)" $F | grep -E '^(TIME|CI in)|^----|"|exit' | grep -v -E '^\s*(\{|\}|\],?)$|"rows"' | cut -c1-200

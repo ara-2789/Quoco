@@ -1,0 +1,6 @@
+SELECT t.slug, t.created_at,
+       (SELECT count(*) FROM public.capture_documents d WHERE d.tenant_id = t.id) AS documents,
+       (SELECT count(*) FROM public.whatsapp_sessions s WHERE s.tenant_id = t.id) AS sessions,
+       (SELECT count(*) FROM public.whatsapp_sessions s WHERE s.tenant_id = t.id AND s.current_flow = 'invoice') AS invoice_sessions,
+       (SELECT count(*) FROM public.users u WHERE u.tenant_id = t.id) AS users
+  FROM public.tenants t WHERE t.slug LIKE 'zz-test-%' ORDER BY t.created_at;

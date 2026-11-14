@@ -1,0 +1,32 @@
+#!/bin/bash
+# ctl2e.sh : GREEN baseline, RED with the planted control, GREEN restored, for T-C-4, T-K-4 and T-P-1. sha256 of each test file printed before every run.
+WT=<worktree>
+OUT=$HOME/quoco-records/052-build/b2e
+F=$OUT/step123-controls.txt
+cd $WT
+: > $F
+run() { # label file envvar envval filter
+  local label=$1 file=$2 var=$3 val=$4 filt=$5
+  {
+  echo; echo "================ $label"
+  echo "timestamp(UTC): $(date -u +%FT%TZ)  HEAD: $(git rev-parse HEAD)"
+  echo "project ref (.env.test): $(grep -E '^SUPABASE_TEST_PROJECT_REF=' .env.test | cut -d= -f2)"
+  echo "git status --short: [$(git status --short | tr '\n' ';')]"
+  echo "sha256 $file: $(shasum -a 256 $file | cut -d' ' -f1)   control: ${var:+$var=$val}${var:-none}"
+  if [ -n "$var" ]; then env $var=$val npx vitest run $file -t "$filt" > $OUT/.c.tmp 2>&1; else npx vitest run $file -t "$filt" > $OUT/.c.tmp 2>&1; fi
+  rc=$?
+  grep -E "Tests  |AssertionError|expected|race-diag\] T-C-4-same round=0" $OUT/.c.tmp | cut -c1-330 | head -5
+  echo "exit $rc => $([ $rc -ne 0 ] && echo RED || echo GREEN)"
+  } >> $F 2>&1
+}
+run "T-C-4 GREEN baseline" test/capture-races.test.ts "" "" "T-C-4"
+run "T-C-4 RED: the wrong expected caller planted (the loser's id)" test/capture-races.test.ts TC4_CONTROL wrong "T-C-4"
+run "T-C-4 GREEN restored" test/capture-races.test.ts "" "" "T-C-4"
+run "T-K-4 GREEN baseline" test/capture-kind-trigger.test.ts "" "" "T-K-4"
+run "T-K-4 RED: QE014 planted as the expected code" test/capture-kind-trigger.test.ts TK_CONTROL k4code "T-K-4"
+run "T-K-4 GREEN restored" test/capture-kind-trigger.test.ts "" "" "T-K-4"
+run "T-P-1 GREEN baseline" test/capture-kind-trigger.test.ts "" "" "T-P-1"
+run "T-P-1 RED: the before-count pointed at a classified document" test/capture-kind-trigger.test.ts TK_CONTROL p1before "T-P-1"
+run "T-P-1 GREEN restored" test/capture-kind-trigger.test.ts "" "" "T-P-1"
+rm -f $OUT/.c.tmp
+grep -E "^================|sha256|exit [0-9]" $F | cut -c1-200

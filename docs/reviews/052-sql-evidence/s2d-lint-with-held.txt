@@ -1,0 +1,13 @@
+HEAD a122d30ae836b1da274f742bca57e0d6d7e73d9f; git status --porcelain (excluding untracked evidence dir and .codex):
+[end porcelain]
+cb5ca25780ddd33be3e23fdea84f6164dbdd480d2f990a3a6c4383eac412ae5d  docs/reviews/052_mi_kind_deferred.sql
+fe40124cd55431e812438274451501ed2ef611d309be2ad27e01815bc1f3c40b  scripts/migration-number-reservations.json
+b7ee67e636f80c87df3dde0cfbc90b83b7ccd19c36119d02bf4821368f72d005  scripts/lint-migrations.mjs
+-- node scripts/lint-migrations.mjs:
+migration-lint: 1 table(s) with a non-CASCADE FK to users(id)/tenants(id)/projects(id) missing from scripts/shared-fixture-fk-coverage.json:
+
+  docs/reviews/052_mi_kind_deferred.sql: capture_documents.kind_set_by -> users  [shared-fixture-fk-coverage]
+
+This has no exceptions mechanism. Add the table to scripts/shared-fixture-fk-coverage.json and teach sweepSharedFixtureReferences() (test/helpers/db.ts) to act on the new entry — see docs/reviews/admin-merge-retrospective-2026-09-05.md for why.
+-- raw violations (--json) naming 052:
+108 raw total; [('capture_documents.kind_set_by -> users', 'shared-fixture-fk-coverage')]

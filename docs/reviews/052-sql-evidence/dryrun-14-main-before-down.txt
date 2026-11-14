@@ -1,0 +1,9 @@
+== state before the DOWN
+ md5 apply_material_inward_turn 6046b03c7849f3755918264fdd1bbc09
+ md5 trg_capture_documents_before_insert 4f83a28f16956ebae830361c4f898899
+ md5 trg_capture_documents_before_update cfcd59258a5039acc395dd8136328ca5
+
+ 052 objects: schema_private=true wrapper=true helper=true new_columns=4 constraints=4 kind_not_null=false ledger_052=true
+
+ rows: documents=3 deliveries=2 links=1 sessions_invoice=2
+

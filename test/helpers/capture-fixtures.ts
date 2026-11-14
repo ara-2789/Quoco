@@ -39,6 +39,7 @@ export async function captureJwtClient(email: string): Promise<SupabaseClient> {
 
 export type CaptureUserLabel =
   | 'eng' //       engineer, active, member of P1 (no web login)
+  | 'engWeb' //    engineer, active, member of P1, WITH a login (052 S-5: the engineer who sent a document calls the classify wrapper)
   | 'engP2' //     engineer, active, member of P2 (same tenant as eng; for the "other project" fixtures, S-1)
   | 'engQs' //     engineer role whose ONLY project_members row has role 'qs' on P1 (SQL review r2 S-4)
   | 'engB' //      engineer in tenant B, member of P3
@@ -61,6 +62,7 @@ interface UserSpec {
 
 const USER_SPECS: Record<CaptureUserLabel, UserSpec> = {
   eng: { role: 'engineer', status: 'active', tenant: 'A', login: false, member: { project: 'P1', role: 'engineer' } },
+  engWeb: { role: 'engineer', status: 'active', tenant: 'A', login: true, member: { project: 'P1', role: 'engineer' } },
   engP2: { role: 'engineer', status: 'active', tenant: 'A', login: false, member: { project: 'P2', role: 'engineer' } },
   engQs: { role: 'engineer', status: 'active', tenant: 'A', login: false, member: { project: 'P1', role: 'qs' } },
   engB: { role: 'engineer', status: 'active', tenant: 'B', login: false, member: { project: 'P3', role: 'engineer' } },
@@ -225,39 +227,49 @@ export async function buildCaptureKit(fileTag: string, labels: readonly CaptureU
   return kit
 }
 
-/** FK-safe teardown. The 049 rows go first, through the fixture-tenant-guarded helper (service_role has no DELETE). */
+/**
+ * FK-safe teardown. The 049 rows go through the fixture-tenant-guarded helper (service_role has no DELETE).
+ *
+ * ORDER (052 block 2b, step 5): the whatsapp_sessions rows are removed FIRST, by the kit's tenants and by its phones,
+ * before anything that can throw. A session left in the 'invoice' flow makes migration 052's A0 abort on any database, and
+ * the old order (sessions after the cleanup RPC, which throws on error) leaked 50 of them on test-db. Every later step runs
+ * even if an earlier one failed (a failure in one must not skip the others); the failures are thrown together at the end.
+ */
 export async function teardownCaptureKit(kit: CaptureKit): Promise<void> {
   const svc = kit.svc
-  for (const tenantId of [kit.tenantA, kit.tenantB]) {
-    const { error } = await svc.rpc('quoco_test_capture_cleanup', { p_tenant_id: tenantId })
-    if (error) throw new Error(`teardown quoco_test_capture_cleanup failed: ${error.message}`)
-    // jobs created by apply_material_inward_turn carry the tenant in the payload
-    const { error: jobErr } = await svc.from('jobs').delete().eq('type', 'capture_ingest').contains('payload', { tenant_id: tenantId })
-    if (jobErr) throw new Error(`teardown jobs failed: ${jobErr.message}`)
-    const { error: logErr } = await svc.from('daily_logs').delete().eq('tenant_id', tenantId)
-    if (logErr) throw new Error(`teardown daily_logs failed: ${logErr.message}`)
-  }
-  const { error: pmErr } = await svc.from('processed_messages').delete().like('message_sid', `ZZTestCapture-${kit.runTag}-%`)
-  if (pmErr) throw new Error(`teardown processed_messages failed: ${pmErr.message}`)
-  if (kit.phones.length > 0) {
-    const { error } = await svc.from('whatsapp_sessions').delete().in('phone_number', kit.phones)
-    if (error) throw new Error(`teardown whatsapp_sessions failed: ${error.message}`)
-  }
   const tenantIds = [kit.tenantA, kit.tenantB]
-  const { error: memErr } = await svc.from('project_members').delete().in('tenant_id', tenantIds)
-  if (memErr) throw new Error(`teardown project_members failed: ${memErr.message}`)
-  const { error: projErr } = await svc.from('projects').delete().in('tenant_id', tenantIds)
-  if (projErr) throw new Error(`teardown projects failed: ${projErr.message}`)
-  const { error: userErr } = await svc.from('users').delete().in('tenant_id', tenantIds)
-  if (userErr) throw new Error(`teardown users failed: ${userErr.message}`)
-  for (const u of Object.values(kit.users)) {
-    if (u?.authId) {
-      const { error } = await svc.auth.admin.deleteUser(u.authId)
-      if (error) throw new Error(`teardown deleteUser failed: ${error.message}`)
+  const failures: string[] = []
+  const step = async (name: string, fn: () => PromiseLike<{ error: { message: string } | null }>): Promise<void> => {
+    try {
+      const { error } = await fn()
+      if (error) failures.push(`teardown ${name} failed: ${error.message}`)
+    } catch (e) {
+      failures.push(`teardown ${name} failed: ${e instanceof Error ? e.message : String(e)}`)
     }
   }
-  const { error: tenErr } = await svc.from('tenants').delete().in('id', tenantIds)
-  if (tenErr) throw new Error(`teardown tenants failed: ${tenErr.message}`)
+
+  await step('whatsapp_sessions (by tenant)', () => svc.from('whatsapp_sessions').delete().in('tenant_id', tenantIds))
+  if (kit.phones.length > 0) {
+    await step('whatsapp_sessions (by phone)', () => svc.from('whatsapp_sessions').delete().in('phone_number', kit.phones))
+  }
+  for (const tenantId of tenantIds) {
+    await step('quoco_test_capture_cleanup', () => svc.rpc('quoco_test_capture_cleanup', { p_tenant_id: tenantId }))
+    // jobs created by apply_material_inward_turn carry the tenant in the payload
+    await step('jobs', () => svc.from('jobs').delete().eq('type', 'capture_ingest').contains('payload', { tenant_id: tenantId }))
+    await step('daily_logs', () => svc.from('daily_logs').delete().eq('tenant_id', tenantId))
+  }
+  await step('processed_messages', () => svc.from('processed_messages').delete().like('message_sid', `ZZTestCapture-${kit.runTag}-%`))
+  await step('project_members', () => svc.from('project_members').delete().in('tenant_id', tenantIds))
+  await step('projects', () => svc.from('projects').delete().in('tenant_id', tenantIds))
+  await step('users', () => svc.from('users').delete().in('tenant_id', tenantIds))
+  for (const u of Object.values(kit.users)) {
+    if (u?.authId) {
+      const authId = u.authId
+      await step('deleteUser', async () => ({ error: (await svc.auth.admin.deleteUser(authId)).error }))
+    }
+  }
+  await step('tenants', () => svc.from('tenants').delete().in('id', tenantIds))
+  if (failures.length > 0) throw new Error(failures.join('; '))
 }
 
 // ---------------------------------------------------------------------------
@@ -333,9 +345,66 @@ export interface MadeDoc {
   fileSid: string
 }
 
+export type PmLabel = 'pm1' | 'pm2' | 'pmB'
+
+// One signed-in client per (kit, PM label): makeDoc is called dozens of times per suite and a sign-in is a network call.
+const pmClients = new WeakMap<CaptureKit, Map<CaptureUserLabel, Promise<SupabaseClient>>>()
+function pmClient(kit: CaptureKit, label: CaptureUserLabel): Promise<SupabaseClient> {
+  let m = pmClients.get(kit)
+  if (!m) pmClients.set(kit, (m = new Map()))
+  let c = m.get(label)
+  if (!c) m.set(label, (c = kit.jwt(label)))
+  return c
+}
+
+/** The PM of the project a document was sent into (pm1 = P1, pm2 = P2, pmB = P3). */
+function pmFor(kit: CaptureKit, projectId: string | undefined): PmLabel {
+  if (projectId === undefined || projectId === kit.p1) return 'pm1'
+  if (projectId === kit.p2) return 'pm2'
+  if (projectId === kit.p3) return 'pmB'
+  throw new Error('pmFor: a project that is not one of the kit projects')
+}
+
 /**
- * Drive the REAL engineer function to S3 (document + delivery + files exist; the ack is still pending):
- * start (4) -> kind ('1' = DC, '2' = invoice) -> file. `label` keeps SIDs and the phone unique per scenario.
+ * Classify a document through the REAL wrapper, as a real PM with a real JWT (migration 052). Returns the raw
+ * PostgREST result so a test can assert a refusal as well as a success (`data` is the 5-key jsonb on success).
+ */
+export async function classifyAsPm(kit: CaptureKit, documentId: string, kind: string, pm: CaptureUserLabel = 'pm1') {
+  const client = await pmClient(kit, pm)
+  return client.rpc('pm_classify_document', { p_document_id: documentId, p_kind: kind })
+}
+
+/**
+ * Drive the real engineer path as far as the document exists but is NOT classified (migration 052): start (4) -> file.
+ * No delivery, no link, kind NULL. `o.userId` lets a test choose the sending engineer (default: `eng`).
+ */
+export async function makeUnclassifiedDoc(
+  kit: CaptureKit,
+  label: string,
+  o: { now?: Date; tenantId?: string; projectId?: string; userId?: string } = {},
+): Promise<{ phone: string; docId: string; fileSid: string }> {
+  const phone = kit.phone(label)
+  const base = { ...(o.now ? { now: o.now } : {}), ...(o.tenantId ? { tenantId: o.tenantId } : {}), ...(o.projectId ? { projectId: o.projectId } : {}), ...(o.userId ? { userId: o.userId } : {}) }
+  await miTurn(kit, phone, '4', kit.sid(`${label}-s0`), { ...base, start: true })
+  const fileSid = kit.sid(`${label}-s2`)
+  const r = await miTurn(kit, phone, null, fileSid, { ...base, media: jpegMedia(1) })
+  if (!r.document_id) throw new Error(`makeUnclassifiedDoc(${label}): no document_id in ${JSON.stringify(r)}`)
+  return { phone, docId: r.document_id, fileSid }
+}
+
+export interface ClassifyResult {
+  document_id: string
+  kind: string
+  delivery_id: string
+  self_link_id: string | null
+  already_classified: boolean
+}
+
+/**
+ * Drive the REAL path to S3 (document + delivery + files exist; the ack is still pending), the way production now works
+ * (migration 052): start (4) -> file (the engineer sends NO kind) -> classify as the PM. The delivery and, for an invoice,
+ * the self-link are created by the classification, not by the engineer turn. `label` keeps SIDs and the phone unique
+ * per scenario. The PM is the PM of the project the document was sent into (pm1 for P1 unless `o.projectId` says otherwise).
  */
 export async function makeDoc(
   kit: CaptureKit,
@@ -346,11 +415,14 @@ export async function makeDoc(
   const phone = kit.phone(label)
   const base = { ...(o.now ? { now: o.now } : {}), ...(o.tenantId ? { tenantId: o.tenantId } : {}), ...(o.projectId ? { projectId: o.projectId } : {}), ...(o.userId ? { userId: o.userId } : {}) }
   await miTurn(kit, phone, '4', kit.sid(`${label}-s0`), { ...base, start: true })
-  await miTurn(kit, phone, kind === 'dc' ? '1' : '2', kit.sid(`${label}-s1`), base)
   const fileSid = kit.sid(`${label}-s2`)
   const r = await miTurn(kit, phone, null, fileSid, { ...base, media: jpegMedia(1) })
-  if (!r.document_id || !r.delivery_id) throw new Error(`makeDoc(${label}): no document_id/delivery_id in ${JSON.stringify(r)}`)
-  return { phone, docId: r.document_id, deliveryId: r.delivery_id, fileSid }
+  if (!r.document_id) throw new Error(`makeDoc(${label}): no document_id in ${JSON.stringify(r)}`)
+  const c = await classifyAsPm(kit, r.document_id, kind, pmFor(kit, o.projectId))
+  if (c.error || !c.data) throw new Error(`makeDoc(${label}): classify failed (${c.error?.code}): ${c.error?.message}`)
+  const deliveryId = (c.data as ClassifyResult).delivery_id
+  if (!deliveryId) throw new Error(`makeDoc(${label}): classify returned no delivery_id`)
+  return { phone, docId: r.document_id, deliveryId, fileSid }
 }
 
 export async function ack(kit: CaptureKit, d: MadeDoc, reply: string, label: string, now?: Date): Promise<MiTurn> {
@@ -379,7 +451,7 @@ export interface DeliveryRow {
 
 export interface DocRow {
   id: string
-  kind: string
+  kind: string | null
   engineer_ack: string | null
   engineer_ack_note: string | null
   source_message_sid: string

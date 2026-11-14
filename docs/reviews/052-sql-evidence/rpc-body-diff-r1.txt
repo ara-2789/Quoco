@@ -1,0 +1,108 @@
+--- pre-052 apply_material_inward_turn (captured body)
++++ 052 apply_material_inward_turn (body)
+@@ -5,10 +5,9 @@
+   v_touch         boolean := false;   -- true once the session row is to be persisted (a processed turn)
+   v_media_n       integer := 0;
+-  v_kind          text;
+   v_doc_id        uuid;
+-  v_delivery_id   uuid;
++  v_delivery_id   uuid;   -- 052: never assigned now (always NULL in the result); see the header rider
+   v_reask         integer;
+   v_ack           text;
+-  v_norm          text;     -- [SQL review r1, per Aravind 18 Oct] N-1: ONE normalised reply, used by BOTH the S1 kind parser and the S3 ack parser
++  v_norm          text;     -- [SQL review r1, per Aravind 18 Oct] N-1: ONE normalised reply, used by the S3 ack parser (052: the S1 kind parser is retired)
+   v_rows          integer;  -- [SQL review r1, per Aravind 18 Oct] N-2
+   v_note          text;
+@@ -18,5 +17,7 @@
+   v_next_file_no  integer;
+   v_files         jsonb;
+-  -- The flow-owned context keys (decided 18 Oct).
++  -- The flow-owned context keys (decided 18 Oct). 052: 'mi_kind' stays in this list and in the clear clauses below.
++  -- Source of a stray key: the restored 050 body after a DOWN, which writes mi_kind at S1; a DOWN then re-UP cycle
++  -- is the case that leaves it behind (A0 guarantees no invoice session exists at apply). SQL review round 1, answer 2.
+   c_mi_keys CONSTANT text[] := ARRAY['mi_last_sid', 'mi_kind', 'mi_document_id', 'mi_reask'];
+ BEGIN
+@@ -81,5 +82,5 @@
+     IF v_session.current_flow IS NULL THEN
+       v_session.current_flow := 'invoice';
+-      v_session.current_step := 1;
++      v_session.current_step := 2;   -- 052: the flow starts at the file step; step 1 (kind) is retired
+       v_session.context      := v_session.context - c_mi_keys;
+       v_outcome := 'start';
+@@ -97,5 +98,4 @@
+   ELSIF v_session.current_flow = 'invoice' THEN
+     v_touch  := true;
+-    v_kind   := v_session.context ->> 'mi_kind';
+     v_doc_id := NULLIF(v_session.context ->> 'mi_document_id', '')::uuid;
+     v_reask  := COALESCE((v_session.context ->> 'mi_reask')::int, 0);
+@@ -106,26 +106,8 @@
+       v_outcome := 'reask';
+ 
+-    ELSIF v_session.current_step = 1 THEN
+-      -- S1 kind parsing (decided 18 Oct): '1' / 'dc' / 'challan' = delivery challan; '2' / 'invoice' / 'bill'
+-      -- = invoice. A file at S1 is not an answer. One re-ask, then close with nothing recorded.
+-      IF v_media_n = 0 AND lower(v_norm) IN ('1', 'dc', 'challan') THEN
+-        v_session.current_step := 2;
+-        v_session.context      := v_session.context || jsonb_build_object('mi_kind', 'dc', 'mi_reask', 0);
+-        v_outcome := 'advance';
+-      ELSIF v_media_n = 0 AND lower(v_norm) IN ('2', 'invoice', 'bill') THEN
+-        v_session.current_step := 2;
+-        v_session.context      := v_session.context || jsonb_build_object('mi_kind', 'invoice', 'mi_reask', 0);
+-        v_outcome := 'advance';
+-      ELSIF v_reask < 1 THEN
+-        v_session.context := v_session.context || jsonb_build_object('mi_reask', v_reask + 1);
+-        v_outcome := 'reask';
+-      ELSE
+-        v_session.current_flow := NULL;
+-        v_session.current_step := 0;
+-        v_session.context      := v_session.context - 'mi_kind' - 'mi_document_id' - 'mi_reask';
+-        v_outcome := 'closed';
+-      END IF;
+-
+-    ELSIF v_session.current_step = 2 THEN
++    ELSIF v_session.current_step IN (1, 2) THEN
++      -- 052: step 1 (kind) is retired -- the kind is set later, by the PM only. A stray step-1 row is read as
++      -- step 2. Same source as the mi_kind key above: the restored 050 body writes step 1 after a DOWN, so a
++      -- DOWN then re-UP cycle can leave one (A0 guarantees none exists at apply). SQL review round 1, answer 2.
+       -- S2 file(s). Text without a file: one re-ask, then close with nothing recorded.
+       IF v_media_n > 0 THEN
+@@ -216,5 +198,5 @@
+   END IF;
+ 
+-  -- Rows for a file turn: S2 creates the document (+ delivery, + self-link for an invoice) and the
++  -- Rows for a file turn: S2 creates the document (052: no kind, no delivery, no self-link) and the
+   -- file rows; S3 / S4 attach further files to the same document.
+   IF v_create OR v_attach THEN
+@@ -236,28 +218,12 @@
+       END IF;
+ 
++      -- 052 (B1): received_at is stored on the document, copied from the SAME processed_messages row the
++      -- lookup above just read. No kind, no delivery, no self-link: the PM classifies later.
+       INSERT INTO public.capture_documents
+-        (tenant_id, project_id, kind, sent_by, source_message_sid, caption)
++        (tenant_id, project_id, sent_by, source_message_sid, received_at, caption)
+       VALUES
+-        (p_tenant_id, p_project_id, v_kind, p_user_id, p_message_sid, NULLIF(left(v_text, 1000), ''))
++        (p_tenant_id, p_project_id, p_user_id, p_message_sid, v_received, NULLIF(left(v_text, 1000), ''))
+       RETURNING id INTO v_doc_id;
+ 
+-      IF v_kind = 'dc' THEN
+-        INSERT INTO public.deliveries
+-          (tenant_id, project_id, reported_by, received_at, dc_document_id)
+-        VALUES
+-          (p_tenant_id, p_project_id, p_user_id, v_received, v_doc_id)
+-        RETURNING id INTO v_delivery_id;
+-      ELSE
+-        -- A28: every invoice creates one automatic delivery and one active self-link, one transaction.
+-        INSERT INTO public.deliveries
+-          (tenant_id, project_id, reported_by, received_at, created_from_invoice_id)
+-        VALUES
+-          (p_tenant_id, p_project_id, p_user_id, v_received, v_doc_id)
+-        RETURNING id INTO v_delivery_id;
+-        INSERT INTO public.delivery_invoice_links
+-          (tenant_id, project_id, delivery_id, invoice_document_id, link_source)
+-        VALUES
+-          (p_tenant_id, p_project_id, v_delivery_id, v_doc_id, 'created_from_invoice');
+-      END IF;
+       v_next_file_no := 1;
+     ELSE

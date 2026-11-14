@@ -1,0 +1,22 @@
+== T-M-1: seed a step-3 invoice session, then apply (expect APPLY_ABORT_052, nothing changed)
+psql:<local-path>:91: ERROR:  APPLY_ABORT_052: invoice sessions exist: 1
+CONTEXT:  PL/pgSQL function inline_code_block line 8 at RAISE
+apply exit=3
+ md5 apply_material_inward_turn cecc170b26208d4b820402879e020271
+ md5 trg_capture_documents_before_insert b5467b20392b7e26449602acb9da2d00
+ md5 trg_capture_documents_before_update 4a7f470362e0bc7b7687737860d112f4
+
+ 052 objects: schema_private=false wrapper=false helper=false new_columns=0 constraints=0 kind_not_null=true ledger_052=false
+
+ rows: documents=0 deliveries=0 links=0 sessions_invoice=1
+
+== same database, session removed: apply succeeds
+apply exit=0
+ md5 apply_material_inward_turn e32797b63fee8fceca1934be700609c3
+ md5 trg_capture_documents_before_insert 4f83a28f16956ebae830361c4f898899
+ md5 trg_capture_documents_before_update cfcd59258a5039acc395dd8136328ca5
+
+ 052 objects: schema_private=true wrapper=true helper=true new_columns=4 constraints=4 kind_not_null=false ledger_052=false
+
+ rows: documents=0 deliveries=0 links=0 sessions_invoice=0
+

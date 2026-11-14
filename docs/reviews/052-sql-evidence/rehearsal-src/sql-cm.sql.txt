@@ -1,0 +1,5 @@
+SELECT md5(concat_ws('|',
+  coalesce(obj_description('public.capture_documents'::regclass, 'pg_class'), '-'),
+  (SELECT coalesce(string_agg(a.attname || '=' || coalesce(col_description(a.attrelid, a.attnum), '-'), ',' ORDER BY a.attname), '-') FROM pg_attribute a WHERE a.attrelid = 'public.capture_documents'::regclass AND a.attnum > 0 AND NOT a.attisdropped),
+  (SELECT coalesce(string_agg(p.proname || '=' || coalesce(obj_description(p.oid, 'pg_proc'), '-'), ',' ORDER BY p.proname), '-') FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('apply_material_inward_turn','trg_capture_documents_before_insert','trg_capture_documents_before_update','pm_classify_document'))
+)) AS comments_hash_052;

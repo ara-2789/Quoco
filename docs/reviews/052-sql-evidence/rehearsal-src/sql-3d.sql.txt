@@ -1,0 +1,2 @@
+SELECT r AS role, has_schema_privilege(r,'private','USAGE') AS usage, has_schema_privilege(r,'private','CREATE') AS "create", (SELECT coalesce(nspacl::text,'NULL') FROM pg_namespace WHERE nspname='private') AS private_nspacl
+  FROM unnest(array['anon','authenticated','service_role']) r;

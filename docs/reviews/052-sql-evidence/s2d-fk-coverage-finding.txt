@@ -1,0 +1,11 @@
+== PROPOSAL ONLY: scripts/shared-fixture-fk-coverage.json is outside the block's May-touch list; it is NOT edited in the commit. Entry drafted at docs/reviews/052-sql-evidence/fk-coverage-entry-proposed.json
+HEAD 2ca8c33c8211b9020b8bca9f113b9ac24388fbce
+sha256 before: 5b3384e35adc6fdee08c086190615c73c62021a19e43a1dee8f0b7693859f5a8  scripts/shared-fixture-fk-coverage.json
+sha256 TEMP-MUTATED: 47f794a57a728d792b6c710938f8e9d47aec9dc0a1a52d2adae5d3a9708f3892  scripts/shared-fixture-fk-coverage.json
+-- lint with the proposed entry (temporary):
+
+migration-lint: clean. 107 known violation(s), all exempted.
+sha256 restored: 5b3384e35adc6fdee08c086190615c73c62021a19e43a1dee8f0b7693859f5a8  scripts/shared-fixture-fk-coverage.json
+[empty above = restored]
+-- raw count check on the unmutated tree (--json): total entries vs 052 entries
+total raw 108 | naming 052: [('capture_documents.kind_set_by -> users', 'shared-fixture-fk-coverage')] | others (incl 107 exempted): 107

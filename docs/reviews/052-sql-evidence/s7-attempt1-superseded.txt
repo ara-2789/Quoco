@@ -1,0 +1,55 @@
+S-7 isolated Rule 10 controls. HEAD 4e39627a68efd04857a8f780b2a89a217d9837dc
+git status --porcelain before: []
+lint script sha256: bbbdc75aa3493df5c977dba5d5f6026e4575454df1046488b2ace7671422b3b0
+reservations file sha256 (real): fe40124cd55431e812438274451501ed2ef611d309be2ad27e01815bc1f3c40b
+
+== Why the two earlier 998 hashes differed (88fefe... vs 0cdb6b...): the two transcripts planted DIFFERENT TEXT.
+   heredoc version (first transcript) sha256: 88fefe906347384ca4f957142465b838b840421ec3e03a54ff13710dbe9d8ab6
+   printf version  (second transcript) sha256: 0cdb6b482048013cb2136e532dc88529a63f08d61fb6ecb79fa44492090f376b
+   (the first comment line differs; earlier hashes were 88fefe906347... and 0cdb6b482048...; compare the prefixes above)
+
+reservations SCRATCH sha256: f06277bb3c860ceda59d068089fca248abdd5cb52e4809d0227fdb5bf3dd0c4a
+
+== A. first-definition file alone (998 planted, reserved): expect clean
+sha256 docs/reviews/998_planted_private_first_def.sql: 88fefe906347384ca4f957142465b838b840421ec3e03a54ff13710dbe9d8ab6
+---- A
+exit=1
+[stdout]
+[stderr]
+migration-lint: 1 violation(s) not covered by scripts/migration-lint-exceptions.json:
+
+  docs/reviews/998_planted_private_first_def.sql: uncaptured-redefinition-private.capture_apply_classification  [function-redefinition-requires-capture]
+
+Each violation needs either a fix, or a new (file, object, rule) entry in scripts/migration-lint-exceptions.json with a reason — never a file-wide or rule-wide exemption.
+
+== B. 998 + redefinition 999 with NO baseline (both reserved): expect exactly ONE violation, Rule 10, private.
+sha256 docs/reviews/998_planted_private_first_def.sql: 88fefe906347384ca4f957142465b838b840421ec3e03a54ff13710dbe9d8ab6
+sha256 docs/reviews/999_planted_private_redef.sql: e86e590dacd925d52fc3f35db0910d00079ca1e4747b0c21d731336b648f793f
+---- B
+exit=1
+[stdout]
+[stderr]
+migration-lint: 2 violation(s) not covered by scripts/migration-lint-exceptions.json:
+
+  docs/reviews/998_planted_private_first_def.sql: uncaptured-redefinition-private.capture_apply_classification  [function-redefinition-requires-capture]
+  docs/reviews/999_planted_private_redef.sql: uncaptured-redefinition-private.capture_apply_classification  [function-redefinition-requires-capture]
+
+Each violation needs either a fix, or a new (file, object, rule) entry in scripts/migration-lint-exceptions.json with a reason — never a file-wide or rule-wide exemption.
+violation lines in stderr: 2 ; raw count via --json naming 99x: [('998_planted_private_first_def.sql', 'uncaptured-redefinition-private.capture_apply_classification', 'function-redefinition-requires-capture'), ('999_planted_private_redef.sql', 'uncaptured-redefinition-private.capture_apply_classification', 'function-redefinition-requires-capture')]
+
+== C. same 999 but WITH its body_md5 line and capture mention: expect clean again
+sha256 docs/reviews/999_planted_private_redef.sql: c0becf64a84e5d73843631df2307898406bf1bcc7656fa28db262c2413e53b41
+---- C
+exit=1
+[stdout]
+[stderr]
+migration-lint: 1 violation(s) not covered by scripts/migration-lint-exceptions.json:
+
+  docs/reviews/998_planted_private_first_def.sql: uncaptured-redefinition-private.capture_apply_classification  [function-redefinition-requires-capture]
+
+Each violation needs either a fix, or a new (file, object, rule) entry in scripts/migration-lint-exceptions.json with a reason — never a file-wide or rule-wide exemption.
+
+== cleanup
+planted files left: 0
+reservations sha256 restored: fe40124cd55431e812438274451501ed2ef611d309be2ad27e01815bc1f3c40b
+git status --porcelain after: []

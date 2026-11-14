@@ -1,0 +1,21 @@
+#!/bin/bash
+WT=<worktree>
+OUT=$HOME/quoco-records/052-build/b2c
+cd $WT
+START=39289b29c973c425080a853286e1439d6195820e
+{
+echo "timestamp(UTC): $(date -u +%FT%TZ)"
+echo "HEAD: $(git rev-parse HEAD)"
+echo "base: $START"
+echo "--- paths that must be UNTOUCHED against the base (nothing printed = untouched):"
+git diff --stat $START -- docs/reviews/052_mi_kind_deferred.sql docs/reviews/052-down-testdb.sql docs/reviews/052-down-prod.sql supabase/migrations scripts/migration-lint-exceptions.json scripts/shared-fixture-fk-coverage.json scripts/lint-migrations.mjs .github/workflows lib/capture lib/whatsapp/capture-switch.ts app test/pm-actions.test.ts test/pm-bucket-guard.test.ts test/pm-d1b-pure.test.ts test/pm-d1b-ui.test.tsx test/pm-d30-shapes.test.tsx test/pm-engineer-names.test.ts test/pm-file-route.test.ts test/pm-queries.test.ts test/pm-render.test.tsx test/pm-strings-approved.test.ts test/pm-unit.test.ts test/pm-viewer-history.test.ts lib/whatsapp/flows types
+echo "[end of untouched list]"
+echo "--- the ONE allowed pm-fixtures.ts change (makeDocWithCaption plus one import):"
+git diff --stat $START -- test/helpers/pm-fixtures.ts
+git diff $START -- test/helpers/pm-fixtures.ts | grep -E '^@@'
+echo "--- full list of paths changed since the base:"
+git diff --name-only $START
+echo "--- sha256 of the held file and both DOWNs:"
+shasum -a 256 docs/reviews/052_mi_kind_deferred.sql docs/reviews/052-down-testdb.sql docs/reviews/052-down-prod.sql
+} > $OUT/step7-untouched-proof.txt 2>&1
+cat $OUT/step7-untouched-proof.txt | cut -c1-200

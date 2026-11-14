@@ -1,0 +1,6 @@
+$ cat supabase/.temp/project-ref  -> exfccwlrhoutkgrlikod
+monitor script start 2026-11-13T17:06:23.193Z
+Initialising login role...
+{"_tag":"Error","error":{"code":"LegacyDbQueryUnexpectedStatusError","message":"unexpected status 400: {\"message\":\"Failed to run sql query: ERROR:  P0001: MONITOR_RESULT started=2026-11-13 17:06:25.94817+00 ended=2026-11-13 17:07:11.011821+00 samples=445 hits=1 first_seen=2026-11-13 17:06:33.34506+00 last_seen=2026-11-13 17:06:33.345076+00 seen_span_ms=0\\nCONTEXT:  PL/pgSQL function inline_code_block line 18 at RAISE\\n\"}"}}
+[exit 1]
+monitor script end 2026-11-13T17:07:11.749Z

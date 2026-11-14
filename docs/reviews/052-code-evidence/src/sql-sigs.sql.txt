@@ -1,0 +1,4 @@
+SELECT n.nspname || '.' || p.proname AS name, pg_get_function_identity_arguments(p.oid) AS identity_args
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+ WHERE p.proname IN ('apply_material_inward_turn','expire_stale_material_inward','pm_set_delivery_details','pm_approve_delivery','pm_reject_delivery','pm_link_invoice','pm_unlink_invoice','trg_capture_files_before_update','trg_capture_documents_before_insert','trg_capture_documents_before_update','pm_classify_document','capture_apply_classification')
+ ORDER BY 1;

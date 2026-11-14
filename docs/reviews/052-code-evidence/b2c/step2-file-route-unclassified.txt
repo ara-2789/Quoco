@@ -1,0 +1,29 @@
+timestamp(UTC): 2026-11-14T02:03:08Z
+HEAD: c23199a72038dfa4c78767db83857c338846a155
+git status --porcelain: [?? test/capture-file-route-unclassified.test.ts;]
+project ref (SUPABASE_TEST_PROJECT_REF of .env.test): exfccwlrhoutkgrlikod  (the vitest guard aborts unless it is exfccwlrhoutkgrlikod)
+command: npx vitest run test/capture-file-route-unclassified.test.ts
+
+ RUN  v3.2.7 <worktree>
+
+stdout | test/capture-file-route-unclassified.test.ts > T-FILE-UNCLASSIFIED the route for a stored, not-previewable PDF > control: a CLASSIFIED document's PDF returns 302 with download=dc-<n>.pdf
+classified PDF: HTTP 302 headers={"cache-control":"no-store","location":"https://exfccwlrhoutkgrlikod.supabase.co/storage/v1/object/sign/capture-documents/3d849af3-3a59-4615-b8ec-4a5934159d7e/9d8ad958-c7ac-4e40-b6b3-55878c656d64/095c6a24-c83e-4d01-a8aa-7cd3b37b4ff3/c7a9496b-3d47-4fa4-8cf5-b66094ddf2f5?token=<masked>&download=dc-1.pdf","referrer-policy":"no-referrer"}
+
+stdout | test/capture-file-route-unclassified.test.ts > T-FILE-UNCLASSIFIED the route for a stored, not-previewable PDF > an UNCLASSIFIED document's PDF, opened by the owning PM: raw result recorded; the document really is unclassified
+unclassified PDF: HTTP 302 headers={"cache-control":"no-store","location":"https://exfccwlrhoutkgrlikod.supabase.co/storage/v1/object/sign/capture-documents/3d849af3-3a59-4615-b8ec-4a5934159d7e/9d8ad958-c7ac-4e40-b6b3-55878c656d64/02f276af-f0a4-42bd-9416-ebdb7660b82f/1d345572-d2da-49cf-9983-1340e3eab1fb?token=<masked>&download=file-1.pdf","referrer-policy":"no-referrer"}
+
+stdout | test/capture-file-route-unclassified.test.ts > T-FILE-UNCLASSIFIED the route for a stored, not-previewable PDF > after the PM classifies that document, the SAME file downloads under the kind name (the name follows the classification)
+same PDF after classification: HTTP 302 headers={"cache-control":"no-store","location":"https://exfccwlrhoutkgrlikod.supabase.co/storage/v1/object/sign/capture-documents/3d849af3-3a59-4615-b8ec-4a5934159d7e/9d8ad958-c7ac-4e40-b6b3-55878c656d64/02f276af-f0a4-42bd-9416-ebdb7660b82f/1d345572-d2da-49cf-9983-1340e3eab1fb?token=<masked>&download=dc-1.pdf","referrer-policy":"no-referrer"}
+
+ ✓ test/capture-file-route-unclassified.test.ts (3 tests) 27607ms
+   ✓ T-FILE-UNCLASSIFIED the route for a stored, not-previewable PDF > control: a CLASSIFIED document's PDF returns 302 with download=dc-<n>.pdf  2278ms
+   ✓ T-FILE-UNCLASSIFIED the route for a stored, not-previewable PDF > an UNCLASSIFIED document's PDF, opened by the owning PM: raw result recorded; the document really is unclassified  3554ms
+   ✓ T-FILE-UNCLASSIFIED the route for a stored, not-previewable PDF > after the PM classifies that document, the SAME file downloads under the kind name (the name follows the classification)  2460ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  07:33:08
+   Duration  27.95s (transform 44ms, setup 0ms, collect 187ms, tests 27.61s, environment 0ms, prepare 22ms)
+
+[vitest exit 0]
+finished(UTC): 2026-11-14T02:03:36Z

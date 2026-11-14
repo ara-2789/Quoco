@@ -1,0 +1,44 @@
+timestamp(UTC): 2026-11-13T18:42:57Z
+HEAD: 99e594d5b66fe9bf9ef72db074fe7f0ea8c4fd70
+git status --porcelain: [ M test/helpers/capture-fixtures.ts;?? test/capture-teardown-leak.test.ts;]
+project ref (SUPABASE_TEST_PROJECT_REF of .env.test): exfccwlrhoutkgrlikod  (the vitest guard aborts unless it is exfccwlrhoutkgrlikod)
+command: npx vitest run test/capture-teardown-leak.test.ts
+
+ RUN  v3.2.7 <worktree>
+
+stdout | test/capture-teardown-leak.test.ts > T-LEAK teardown removes sessions even when the cleanup RPC throws > T-LEAK-1 an engineer turn leaves an invoice-flow session; the teardown with a failing cleanup RPC throws AND leaks none
+T-LEAK-1 invoice-flow sessions for this run's tenants: before teardown=1 after the aborted teardown=1 (leaked=1)
+
+ ❯ test/capture-teardown-leak.test.ts (1 test | 1 failed) 9151ms
+   × T-LEAK teardown removes sessions even when the cleanup RPC throws > T-LEAK-1 an engineer turn leaves an invoice-flow session; the teardown with a failing cleanup RPC throws AND leaks none 1269ms
+     → expected 1 to be +0 // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/capture-teardown-leak.test.ts > T-LEAK teardown removes sessions even when the cleanup RPC throws > T-LEAK-1 an engineer turn leaves an invoice-flow session; the teardown with a failing cleanup RPC throws AND leaks none
+AssertionError: expected 1 to be +0 // Object.is equality
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- 0[39m
+[31m+ 1[39m
+
+ ❯ test/capture-teardown-leak.test.ts:63:19
+     61|     const after = await invoiceSessions()
+     62|     console.info(`T-LEAK-1 invoice-flow sessions for this run's tenant…
+     63|     expect(after).toBe(0)
+       |                   ^
+     64|   })
+     65| })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed (1)
+   Start at  00:12:57
+   Duration  9.30s (transform 38ms, setup 0ms, collect 33ms, tests 9.15s, environment 0ms, prepare 23ms)
+
+[vitest exit 1]
+finished(UTC): 2026-11-13T18:43:07Z

@@ -1,0 +1,17 @@
+timestamp(UTC): 2026-11-13T19:22:56Z
+HEAD: 0f87a02865d7cfd885f24702affb5d723862c1b5
+git status --porcelain: [?? test/capture-kind-deferred.test.ts;]
+project ref (SUPABASE_TEST_PROJECT_REF of .env.test): exfccwlrhoutkgrlikod  (the vitest guard aborts unless it is exfccwlrhoutkgrlikod)
+command: npx vitest run test/capture-kind-deferred.test.ts
+
+ RUN  v3.2.7 <worktree>
+
+ ✓ test/capture-kind-deferred.test.ts (13 tests) 38ms
+
+ Test Files  1 passed (1)
+      Tests  13 passed (13)
+   Start at  00:52:57
+   Duration  168ms (transform 25ms, setup 0ms, collect 21ms, tests 38ms, environment 0ms, prepare 18ms)
+
+[vitest exit 0]
+finished(UTC): 2026-11-13T19:22:57Z

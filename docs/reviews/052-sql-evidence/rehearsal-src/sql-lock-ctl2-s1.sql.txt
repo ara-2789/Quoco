@@ -1,0 +1,5 @@
+BEGIN;
+SELECT id FROM public.capture_documents WHERE id = 'd81b8353-8f19-4f68-b855-4281e745c4ff' FOR UPDATE;
+SELECT pg_sleep(12);
+COMMIT;
+SELECT 'S1 committed (PostgREST positive control)' AS s1;

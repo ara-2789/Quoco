@@ -1,0 +1,15 @@
+== 1c-3b full violation text, first-def only
+HEAD f007f61dc900b0d6c3ba997c5c93c628fb7f6c93
+0cdb6b482048013cb2136e532dc88529a63f08d61fb6ecb79fa44492090f376b  docs/reviews/998_planted_private_first_def.sql
+migration-lint: 1 violation(s) not covered by scripts/migration-lint-exceptions.json:
+
+  docs/reviews/998_planted_private_first_def.sql: unreserved-998  [held-migration-reservation-required]
+
+
+== 1c-4 RED control 2: PUBLIC function redefined, no body_md5 line (bare-name key expected)
+b7ee67e636f80c87df3dde0cfbc90b83b7ccd19c36119d02bf4821368f72d005  scripts/lint-migrations.mjs
+e7fb6e4376fe49a1b8ead346ffb0099c828a37ff6254f0ae07a6a746a6cb3b89  docs/reviews/999_planted_public_redef.sql
+exit=1
+  docs/reviews/999_planted_public_redef.sql: uncaptured-redefinition-apply_material_inward_turn  [function-redefinition-requires-capture]
+-- removed; planted files left: 0
+ M scripts/lint-migrations.mjs

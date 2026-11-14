@@ -1,0 +1,5 @@
+SELECT count(*) AS invoice_sessions, count(*) FILTER (WHERE expires_at < now()) AS expired, count(*) FILTER (WHERE expires_at >= now()) AS live,
+       min(updated_at) AS oldest_updated, max(updated_at) AS newest_updated,
+       count(*) FILTER (WHERE tenant_id IN (SELECT id FROM public.tenants WHERE slug LIKE 'zz-test-%')) AS in_zz_test_tenants,
+       count(DISTINCT tenant_id) AS tenants
+  FROM public.whatsapp_sessions WHERE current_flow = 'invoice';

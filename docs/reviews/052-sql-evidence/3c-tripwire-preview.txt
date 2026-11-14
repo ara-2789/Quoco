@@ -1,0 +1,29 @@
+HEAD a122d30ae836b1da274f742bca57e0d6d7e73d9f (committed)
+### grep -nE 'INSERT INTO public\.capture_documents' supabase/migrations/*.sql docs/reviews/*.sql  (raw, comments included)
+supabase/migrations/050_material_inward_functions.sql:322:      INSERT INTO public.capture_documents
+docs/reviews/052_mi_kind_deferred.sql:724:      INSERT INTO public.capture_documents
+docs/reviews/052-down-testdb.sql:314:      INSERT INTO public.capture_documents
+docs/reviews/052-down-prod.sql:314:      INSERT INTO public.capture_documents
+
+### same, comment lines (starting --) excluded
+supabase/migrations/050_material_inward_functions.sql:322:      INSERT INTO public.capture_documents
+docs/reviews/052_mi_kind_deferred.sql:724:      INSERT INTO public.capture_documents
+docs/reviews/052-down-testdb.sql:314:      INSERT INTO public.capture_documents
+docs/reviews/052-down-prod.sql:314:      INSERT INTO public.capture_documents
+
+### other forms (no schema / quoted):
+[none above]
+
+### column list of each hit:
+-- supabase/migrations/050_material_inward_functions.sql
+322:      INSERT INTO public.capture_documents
+323-        (tenant_id, project_id, kind, sent_by, source_message_sid, caption)
+-- docs/reviews/052_mi_kind_deferred.sql
+724:      INSERT INTO public.capture_documents
+725-        (tenant_id, project_id, sent_by, source_message_sid, received_at, caption)
+-- docs/reviews/052-down-testdb.sql
+314:      INSERT INTO public.capture_documents
+315-        (tenant_id, project_id, kind, sent_by, source_message_sid, caption)
+-- docs/reviews/052-down-prod.sql
+314:      INSERT INTO public.capture_documents
+315-        (tenant_id, project_id, kind, sent_by, source_message_sid, caption)

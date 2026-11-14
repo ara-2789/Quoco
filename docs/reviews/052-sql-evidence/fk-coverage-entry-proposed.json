@@ -1,0 +1,7 @@
+{
+  "table": "capture_documents",
+  "column": "kind_set_by",
+  "parent": "users",
+  "action": "not-applicable",
+  "note": "052_mi_kind_deferred.sql (HELD) -- composite (kind_set_by, tenant_id) -> users(id, tenant_id), ON UPDATE RESTRICT ON DELETE RESTRICT; nullable (set only when a PM classifies). Same reasoning as capture_documents.sent_by: capture tests use only users of their own capture-fixture tenants (Option Y); service_role has no DELETE on this table, so a generic sweep delete would error, not no-op."
+}

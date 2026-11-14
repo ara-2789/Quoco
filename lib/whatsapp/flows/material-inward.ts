@@ -8,18 +8,14 @@ import { MORNING_QUESTIONS } from './morning'
 import { EVENING_QUESTIONS } from './evening'
 import {
   MI_SESSION_ENDED_REPLY,
-  MI_ASK_KIND,
-  MI_ASK_FILE_DC,
-  MI_ASK_FILE_INVOICE,
+  MI_ASK_FILE,
   MI_FILE_RECEIVED,
-  MI_ACK_QUESTION_DC,
-  MI_ACK_QUESTION_INVOICE,
+  MI_ACK_QUESTION,
   MI_ASK_NOTE_NO,
   MI_ASK_NOTE_PARTIAL,
   MI_ACK_REASK,
   MI_NOT_UNDERSTOOD_CLOSE,
   MI_DONE,
-  MI_KIND_REASK,
   MI_FILE_REASK,
   MI_NOTHING_RECORDED_CLOSE,
   MI_UNSUPPORTED_FILE_REPLY,
@@ -156,18 +152,8 @@ export function reportFileAfterSessionEnded(media: readonly MediaItem[]): void {
 // post-RPC reads (inside the S-F try/catch for file turns)
 // ---------------------------------------------------------------------------
 
-async function readKind(supabase: SupabaseClient, phoneNumber: string, tenantId: string): Promise<'dc' | 'invoice'> {
-  const { data, error } = await supabase
-    .from('whatsapp_sessions')
-    .select('context')
-    .eq('phone_number', phoneNumber)
-    .eq('tenant_id', tenantId)
-    .maybeSingle<{ context: Record<string, unknown> | null }>()
-  if (error) throw new MaterialInwardDbError('material-inward session read', error.code)
-  const kind = data?.context?.mi_kind
-  if (kind !== 'dc' && kind !== 'invoice') throw new Error('material-inward session has no kind')
-  return kind
-}
+// Migration 052 (plan section D): the engineer no longer declares a kind, so the old session read of context.mi_kind
+// (readKind) is gone: the file question and the ack question are the same text for a DC and an invoice.
 
 async function readAck(supabase: SupabaseClient, documentId: string, tenantId: string): Promise<string | null> {
   const { data, error } = await supabase
@@ -183,24 +169,18 @@ async function readAck(supabase: SupabaseClient, documentId: string, tenantId: s
 
 interface ReplyContext {
   supabase: SupabaseClient
-  phoneNumber: string
   tenantId: string
   documentId: string | null
 }
 
-/** The question the engineer owes at `step`, as plain approved text. */
+/** The question the engineer owes at `step`. Steps 1 and 2 both ask for the file (a stray step-1 row reads as step 2). */
 async function promptForStep(step: number, ctx: ReplyContext): Promise<string> {
   switch (step) {
     case 1:
-      return MI_ASK_KIND
     case 2:
-      return (await readKind(ctx.supabase, ctx.phoneNumber, ctx.tenantId)) === 'invoice'
-        ? MI_ASK_FILE_INVOICE
-        : MI_ASK_FILE_DC
+      return MI_ASK_FILE
     case 3:
-      return (await readKind(ctx.supabase, ctx.phoneNumber, ctx.tenantId)) === 'invoice'
-        ? MI_ACK_QUESTION_INVOICE
-        : MI_ACK_QUESTION_DC
+      return MI_ACK_QUESTION
     case 4: {
       if (ctx.documentId === null) throw new Error('material-inward step 4 without a document')
       const ack = await readAck(ctx.supabase, ctx.documentId, ctx.tenantId)
@@ -266,7 +246,6 @@ export async function handleMaterialInwardTurn(
     })
     const ctx: ReplyContext = {
       supabase,
-      phoneNumber: params.phoneNumber,
       tenantId: params.tenantId,
       documentId: result.documentId,
     }
@@ -275,7 +254,7 @@ export async function handleMaterialInwardTurn(
 
     switch (result.outcome) {
       case 'start':
-        return reply(MI_ASK_KIND)
+        return reply(MI_ASK_FILE)
       case 'advance':
         if (result.currentStep === 3) {
           return reply([MI_FILE_RECEIVED(n), await promptForStep(3, ctx)].join('\n'))
@@ -284,7 +263,6 @@ export async function handleMaterialInwardTurn(
       case 'file_attached':
         return reply([MI_FILE_RECEIVED(n), await promptForStep(result.currentStep, ctx)].join('\n'))
       case 'reask':
-        if (result.currentStep === 1) return reply([MI_KIND_REASK, MI_ASK_KIND].join('\n'))
         if (result.currentStep === 2) return reply(MI_FILE_REASK)
         if (result.currentStep === 3) return reply([MI_ACK_REASK, await promptForStep(3, ctx)].join('\n'))
         return reply(await promptForStep(result.currentStep, ctx))
@@ -382,13 +360,12 @@ export async function startMaterialInward(
   })
   const ctx: ReplyContext = {
     supabase,
-    phoneNumber: params.phoneNumber,
     tenantId: params.tenantId,
     documentId: result.documentId,
   }
   switch (result.outcome) {
     case 'start':
-      return { reply: MI_ASK_KIND, resolvedFlow: 'invoice' }
+      return { reply: MI_ASK_FILE, resolvedFlow: 'invoice' }
     case 'reask':
       // Another flow is live (race) -> null. A live 'invoice' session (a concurrent start) -> its current question.
       if (result.currentFlow !== 'invoice') return null

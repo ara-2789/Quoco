@@ -1,0 +1,1 @@
+SELECT json_agg(to_jsonb(s) ORDER BY s.id) AS backup FROM public.whatsapp_sessions s WHERE s.current_flow = 'invoice';

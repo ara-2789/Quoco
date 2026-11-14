@@ -1,0 +1,6 @@
+#!/bin/bash
+cd <worktree>
+echo "######## family C: pm-*"
+LINES_MAX=80 bash $HOME/.claude/jobs/2a6b4d65/tmp/vt.sh step6b-familyC-pm test/pm-*.test.ts test/pm-*.test.tsx
+echo "######## family B: lint tests"
+LINES_MAX=30 bash $HOME/.claude/jobs/2a6b4d65/tmp/vt.sh step6b-familyB-lint test/unit/lint-migrations-rule10.test.ts test/unit/lint-no-auth-uid-as-users-id.test.ts

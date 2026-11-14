@@ -1,0 +1,20 @@
+HEAD: 4cda6cb6e64dec7b6d007bc0cf1a82c2aa354263
+old teardown source: git show 0f87a02^:test/helpers/capture-fixtures.ts  (0f87a02^ = 99e594d5b66fe9bf9ef72db074fe7f0ea8c4fd70)
+
+================ RED: OLD teardownCaptureKit (temp copy swapped in)
+sha256 of test/helpers/capture-fixtures.ts BEFORE the swap (current):  91c33f5e39339fd6bfede41d8130d90802a1edf4c188e463b666423d8bad19f7
+sha256 of test/helpers/capture-fixtures.ts DURING the RED run (old):   027230cd5568bdfe1281c909ee080e8c81d216be8e27df66920f21fdbeb3954d
+T-LEAK-1 invoice-flow sessions for this run's tenants: before teardown=1 after the aborted teardown=1 (leaked=1)
+AssertionError: expected 1 to be +0 // Object.is equality
+     66|     console.info(`T-LEAK-1 invoice-flow sessions for this run's tenant…
+      Tests  1 failed (1)
+exit 1 => RED
+restored; sha256 AFTER the restore:      91c33f5e39339fd6bfede41d8130d90802a1edf4c188e463b666423d8bad19f7
+git status --short AFTER restore: []
+
+================ GREEN: CURRENT teardownCaptureKit
+sha256 of test/helpers/capture-fixtures.ts before the run:             91c33f5e39339fd6bfede41d8130d90802a1edf4c188e463b666423d8bad19f7
+T-LEAK-1 invoice-flow sessions for this run's tenants: before teardown=1 after the aborted teardown=0 (leaked=0)
+      Tests  1 passed (1)
+exit 0 => GREEN
+git status --short AFTER: []

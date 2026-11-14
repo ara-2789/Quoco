@@ -1,0 +1,3 @@
+SELECT left(md5(a.email), 8) AS email_md5_8, split_part(a.email, '@', 2) AS email_domain, a.created_at, (u.id IS NOT NULL) AS has_public_user, t.slug AS tenant_slug, left(a.email, 8) AS email_prefix8
+  FROM auth.users a LEFT JOIN public.users u ON u.auth_id = a.id LEFT JOIN public.tenants t ON t.id = u.tenant_id
+ WHERE a.email LIKE '%@quoco.test' ORDER BY a.created_at;

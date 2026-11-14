@@ -1,0 +1,246 @@
+timestamp(UTC): 2026-11-14T02:33:45Z
+HEAD: 4cda6cb6e64dec7b6d007bc0cf1a82c2aa354263
+git status --porcelain: [ M docs/reviews/052-code-review-package.md;]
+project ref (SUPABASE_TEST_PROJECT_REF of .env.test): exfccwlrhoutkgrlikod  (the vitest guard aborts unless it is exfccwlrhoutkgrlikod)
+command: npx vitest run test/pm-actions.test.ts test/pm-bucket-guard.test.ts test/pm-d1b-pure.test.ts test/pm-engineer-names.test.ts test/pm-file-route.test.ts test/pm-queries.test.ts test/pm-strings-approved.test.ts test/pm-unit.test.ts test/pm-viewer-history.test.ts test/pm-d1b-ui.test.tsx test/pm-d30-shapes.test.tsx test/pm-render.test.tsx
+
+ RUN  v3.2.7 <worktree>
+
+stdout | test/pm-actions.test.ts > T-ACT-4b: link to an approved DC (raw result recorded) > approved DC: PM-A1 links an invoice to an APPROVED DC; the raw RPC result is printed
+[E4 raw] {"data":{"linked":1,"invoice_document_id":"28f9fc66-6751-472c-94c9-329ec6fce90e","superseded_automatic":true},"error":null,"activeLinksOfInvoiceAfter":[{"source":"pm_manual","delivery_is_the_approved_dc":true}],"dcStatusAfter":"approved","invoiceAutomaticDeliveryStatusAfter":"cancelled"}
+
+ ✓ test/pm-actions.test.ts (46 tests | 1 skipped) 267072ms
+   ✓ T-ACT-1: set details > PM-A1 saves; the row carries the values  4124ms
+   ✓ T-ACT-1: set details > PR-D1b VEHICLE PASS-THROUGH: saving a new DC no. and date with the form's own `next` keeps the stored vehicle  5233ms
+   ✓ T-ACT-1: set details > pm2 is refused (NOT_AVAILABLE) and the row is unchanged  3887ms
+   ✓ T-ACT-1: set details > pmB is refused (NOT_AVAILABLE) and the row is unchanged  3686ms
+   ✓ T-ACT-1: set details > qs is refused (NOT_AVAILABLE) and the row is unchanged  3788ms
+   ✓ T-ACT-1: set details > deact is refused (NOT_AVAILABLE) and the row is unchanged  4032ms
+   ✓ T-ACT-2: approve > PM-A1 approves a delivery with a type  4900ms
+   ✓ T-ACT-2: approve > pm2 is refused and the status is unchanged  4654ms
+   ✓ T-ACT-2: approve > pmB is refused and the status is unchanged  5050ms
+   ✓ T-ACT-2: approve > qs is refused and the status is unchanged  5044ms
+   ✓ T-ACT-2: approve > deact is refused and the status is unchanged  4710ms
+   ✓ T-ACT-3: reject > PM-A1 rejects with a reason  3352ms
+   ✓ T-ACT-3: reject > pm2 is refused and the row is unchanged  4020ms
+   ✓ T-ACT-3: reject > pmB is refused and the row is unchanged  4106ms
+   ✓ T-ACT-3: reject > qs is refused and the row is unchanged  3387ms
+   ✓ T-ACT-3: reject > deact is refused and the row is unchanged  3741ms
+   ✓ T-ACT-4: link > PM-A1 links an invoice to a DC; the automatic delivery is cancelled by the link  6041ms
+   ✓ T-ACT-4: link > pm2 is refused and no link is written  6229ms
+   ✓ T-ACT-4: link > pmB is refused and no link is written  6039ms
+   ✓ T-ACT-4: link > qs is refused and no link is written  6060ms
+   ✓ T-ACT-4: link > deact is refused and no link is written  6250ms
+   ✓ T-ACT-4b: link to an approved DC (raw result recorded) > approved DC: PM-A1 links an invoice to an APPROVED DC; the raw RPC result is printed  9418ms
+   ✓ T-ACT-5: unlink > PM-A1 unlinks; the automatic delivery is restored with a new self-link  7372ms
+   ✓ T-ACT-5: unlink > pm2 is refused and the link stays active  7343ms
+   ✓ T-ACT-5: unlink > pmB is refused and the link stays active  7021ms
+   ✓ T-ACT-5: unlink > qs is refused and the link stays active  7447ms
+   ✓ T-ACT-5: unlink > deact is refused and the link stays active  7269ms
+   ✓ T-ERR-1 (database half): each reachable refusal arrives as its key > QE016: approve with no delivery type  3339ms
+   ✓ T-ERR-1 (database half): each reachable refusal arrives as its key > QE011: approve twice  5322ms
+   ✓ T-ERR-1 (database half): each reachable refusal arrives as its key > QE010: unlinking the automatic self-link  3421ms
+   ✓ T-ERR-1 (database half): each reachable refusal arrives as its key > QE008: a second invoice for a DC that is already linked  10139ms
+   ✓ T-ERR-1 (database half): each reachable refusal arrives as its key > QE006: retype a linked DC to internal transfer  7331ms
+   ✓ T-ERR-1 (database half): each reachable refusal arrives as its key > QE007: retype an automatic delivery to internal transfer  4079ms
+   ✓ T-ERR-1 (database half): each reachable refusal arrives as its key > QE003: link to an internal-transfer DC  7829ms
+   ✓ T-ERR-1 (database half): each reachable refusal arrives as its key > QE004: link to an automatic delivery  5917ms
+   ✓ T-ERR-1 (database half): each reachable refusal arrives as its key > QE005: link to a rejected DC  6586ms
+   ✓ T-ERR-1 (database half): each reachable refusal arrives as its key > QE015: a PM of another project  3174ms
+   ✓ T-REPEAT-1..5: repeat calls, and a second PM (admMem, a pm member of A1) having already acted > T-REPEAT-1 set details: the same values twice are ok; after approval both the stale path and the RPC path refuse  7251ms
+   ✓ T-REPEAT-1..5: repeat calls, and a second PM (admMem, a pm member of A1) having already acted > T-REPEAT-2 approve: repeat and other-PM-already-approved  5897ms
+   ✓ T-REPEAT-1..5: repeat calls, and a second PM (admMem, a pm member of A1) having already acted > T-REPEAT-3 reject: repeat and other-PM-already-rejected  4566ms
+   ✓ T-REPEAT-1..5: repeat calls, and a second PM (admMem, a pm member of A1) having already acted > T-REPEAT-4 link: repeat, and another PM linking a different invoice to the same DC  9915ms
+   ✓ T-REPEAT-1..5: repeat calls, and a second PM (admMem, a pm member of A1) having already acted > T-REPEAT-5 unlink: repeat, and another PM having unlinked first  8226ms
+   ✓ T-STALE-1: the set-details form carries what it loaded; a changed row refuses BEFORE the RPC (D8) > another PM changed the vehicle after the form loaded: STATE_CHANGED, their value stands  4724ms
+   ✓ T-STALE-1: the set-details form carries what it loaded; a changed row refuses BEFORE the RPC (D8) > POSITIVE CONTROL: the same save with a refreshed form succeeds  4620ms
+   ✓ T-STALE-1: the set-details form carries what it loaded; a changed row refuses BEFORE the RPC (D8) > empty vs null is not a difference  3379ms
+stdout | test/pm-queries.test.ts
+[pm-queries] buildPmKit: 8902 ms
+
+stdout | test/pm-queries.test.ts
+[pm-queries] makeDocWithFile q-dca1 (stored): 2797 ms
+
+stdout | test/pm-queries.test.ts
+[pm-queries] makeDocWithFile q-inva1 (invoice, pending): 1709 ms
+
+stdout | test/pm-queries.test.ts
+[pm-queries] makeDocWithFile q-dca2 (stored, P2): 3642 ms
+
+stdout | test/pm-queries.test.ts
+[pm-queries] makeDocWithFile q-dcb (stored, tenant B): 2742 ms
+
+stdout | test/pm-queries.test.ts > C3: an old awaiting_pm delivery is not pushed off the capped list by newer approved ones
+[pm-queries] c3 oldAwait doc (created first): 2637 ms
+
+stdout | test/pm-queries.test.ts > C3: an old awaiting_pm delivery is not pushed off the capped list by newer approved ones
+[pm-queries] c3 oldAwait ack: 450 ms
+
+stdout | test/pm-queries.test.ts > C3: an old awaiting_pm delivery is not pushed off the capped list by newer approved ones
+[pm-queries] c3 approve dcA2: 1701 ms
+
+stdout | test/pm-queries.test.ts > C3: an old awaiting_pm delivery is not pushed off the capped list by newer approved ones
+[pm-queries] c3 n1 doc: 3294 ms
+
+stdout | test/pm-queries.test.ts > C3: an old awaiting_pm delivery is not pushed off the capped list by newer approved ones
+[pm-queries] c3 n2 doc: 2479 ms
+
+stdout | test/pm-queries.test.ts > C3: an old awaiting_pm delivery is not pushed off the capped list by newer approved ones
+[pm-queries] c3 approve n1: 2008 ms
+
+stdout | test/pm-queries.test.ts > C3: an old awaiting_pm delivery is not pushed off the capped list by newer approved ones
+[pm-queries] c3 approve n2: 1946 ms
+
+stdout | test/pm-queries.test.ts > E2/E3: link pickers apply every eligibility rule BEFORE the cap
+[pm-queries] picker x1 doc: 2526 ms
+
+stdout | test/pm-queries.test.ts > E2/E3: link pickers apply every eligibility rule BEFORE the cap
+[pm-queries] picker x2 doc: 2631 ms
+
+stdout | test/pm-queries.test.ts > E2/E3: link pickers apply every eligibility rule BEFORE the cap
+[pm-queries] picker x3 doc: 2684 ms
+
+stdout | test/pm-queries.test.ts > E2/E3: link pickers apply every eligibility rule BEFORE the cap
+[pm-queries] picker inv2 doc: 2643 ms
+
+stdout | test/pm-queries.test.ts > E2/E3: link pickers apply every eligibility rule BEFORE the cap
+[pm-queries] picker invApproved doc: 2434 ms
+
+stdout | test/pm-queries.test.ts > E2/E3: link pickers apply every eligibility rule BEFORE the cap
+[pm-queries] picker approve invApproved auto delivery: 2049 ms
+
+stdout | test/pm-queries.test.ts > F1: the invoice-page picker when the project has no active links at all
+[pm-queries] f1 invoice in P3: 2864 ms
+
+stdout | test/pm-queries.test.ts
+[pm-queries] removeStoredObjects: 1123 ms
+
+stdout | test/pm-queries.test.ts
+[pm-queries] teardownCaptureKit: 4550 ms
+
+ ✓ test/pm-queries.test.ts (24 tests) 100577ms
+   ✓ T-R-1: PM-A1 reads project A1 > list: both A1 deliveries, nothing from A2 or tenant B  2112ms
+   ✓ T-R-1: PM-A1 reads project A1 > detail: the DC delivery with its stored file, the invoice delivery with its pending file  3586ms
+   ✓ T-R-1: PM-A1 reads project A1 > detail with a non-uuid id is not-found and never reaches the or() filter  363ms
+   ✓ T-R-2: other project (same tenant) and other tenant see none of A1 > PM-A2: own project only; A1 detail is not-found  1683ms
+   ✓ T-R-2: other project (same tenant) and other tenant see none of A1 > PM-B: tenant B only; A1 and A2 details are not-found  2510ms
+   ✓ T-R-2: other project (same tenant) and other tenant see none of A1 > POSITIVE CONTROL: the owning PMs do see their own detail  3226ms
+   ✓ T-R-3: a non-PM member and an inactive user see nothing > qs member of A1 (role qs, not pm): not-a-pm, detail not-found  1079ms
+   ✓ T-R-3: a non-PM member and an inactive user see nothing > deactivated PM of A1 (a pm membership exists, users.status = deactivated): zero rows, detail not-found  1318ms
+   ✓ T-R-4: anon sees nothing > an anon-key client with no session: no rows, no detail  492ms
+   ✓ C3: an old awaiting_pm delivery is not pushed off the capped list by newer approved ones > the fixture is what the test says it is: statuses, and oldAwait has the OLDEST real received_at  346ms
+   ✓ C3: an old awaiting_pm delivery is not pushed off the capped list by newer approved ones > (a) limit 2: the old open delivery is FIRST, the newest approved one follows, and the list is marked truncated  1374ms
+   ✓ C3: an old awaiting_pm delivery is not pushed off the capped list by newer approved ones > limit 3: open first, then approved newest-first (n2, then n1); still truncated (dcA2 is beyond the cap)  1355ms
+   ✓ C3: an old awaiting_pm delivery is not pushed off the capped list by newer approved ones > limit 4 holds all of P2 and is not truncated; the default cap shows the same four  3035ms
+   ✓ C3: an old awaiting_pm delivery is not pushed off the capped list by newer approved ones > within the open group the order is newest received_at first (P1 has two open deliveries); groups never interleave  3484ms
+   ✓ C3: an old awaiting_pm delivery is not pushed off the capped list by newer approved ones > POSITIVE CONTROL (data form): the date-only order with the same cap DOES drop it, because n1 and n2 are newer  604ms
+   ✓ E2/E3: link pickers apply every eligibility rule BEFORE the cap > E2: invoice page, cap 2, THREE ineligible DCs are newer than the one eligible DC: the older eligible DC is still offered  1885ms
+   ✓ E2/E3: link pickers apply every eligibility rule BEFORE the cap > POSITIVE CONTROL (data form): the previous query shape (cap first, filters afterwards) would have offered nothing here  600ms
+   ✓ E2/E3: link pickers apply every eligibility rule BEFORE the cap > E2: with the default cap the picker holds exactly the eligible DC (an internal transfer, a rejected DC and a linked DC are all out)  1955ms
+   ✓ E2/E3: link pickers apply every eligibility rule BEFORE the cap > E3: DC page: the invoice whose automatic delivery is APPROVED is not offered; the others are  1703ms
+   ✓ E2/E3: link pickers apply every eligibility rule BEFORE the cap > E3: the exclusion happens BEFORE the cap: with cap 1 the newest invoice is the approved one, and it is skipped for the next  1947ms
+   ✓ E2/E3: link pickers apply every eligibility rule BEFORE the cap > POSITIVE CONTROL: the approved-automatic invoice really is newer than the one offered, and really is approved  614ms
+   ✓ F1: the invoice-page picker when the project has no active links at all > the DC is offered and no error comes back (the not-in filter is skipped when the list is empty)  1842ms
+   ✓ F1: the invoice-page picker when the project has no active links at all > same result with a small injected cap  2153ms
+stdout | test/pm-file-route.test.ts
+[pm-file-route] buildPmKit: 10967 ms
+
+stdout | test/pm-file-route.test.ts
+[pm-file-route] makeDocWithFile f-dca1 (stored): 3850 ms
+
+stdout | test/pm-file-route.test.ts
+[pm-file-route] makeDocWithFile f-pdf (stored_pdf): 2610 ms
+
+stdout | test/pm-file-route.test.ts
+[pm-file-route] makeDocWithFile f-dca2 (stored, P2): 3585 ms
+
+stdout | test/pm-file-route.test.ts
+[pm-file-route] makeDocWithFile f-dcb (stored, tenant B): 3169 ms
+
+stdout | test/pm-file-route.test.ts
+[pm-file-route] makeDocWithFile f-pend (pending): 1592 ms
+
+stdout | test/pm-file-route.test.ts
+[pm-file-route] makeDocWithFile f-fail (failed): 1941 ms
+
+stdout | test/pm-file-route.test.ts
+[pm-file-route] makeDocWithFile f-rej (rejected): 1947 ms
+
+stdout | test/pm-file-route.test.ts
+[pm-file-route] makeDocWithFile f-invpdf (invoice, stored_pdf): 2498 ms
+
+stdout | test/pm-file-route.test.ts
+[pm-file-route] removeStoredObjects: 511 ms
+
+stdout | test/pm-file-route.test.ts
+[pm-file-route] teardownCaptureKit: 5120 ms
+
+ ✓ test/pm-file-route.test.ts (26 tests) 83326ms
+   ✓ T-FILE-1: PM-A1 opens a stored file > 302 to a signed URL on the capture-documents bucket, with both headers  2356ms
+   ✓ T-FILE-1: PM-A1 opens a stored file > the signed URL really serves the object, with the stored Content-Type and no attachment disposition  2993ms
+   ✓ T-FILE-1: PM-A1 opens a stored file > a not-previewable PDF is signed with download=dc-<file_no>.pdf and is served as an attachment  3515ms
+   ✓ T-FILE-1: PM-A1 opens a stored file > a not-previewable INVOICE pdf downloads as invoice-<file_no>.pdf (the raw capture_documents.kind value, 049:286)  3391ms
+   ✓ T-FILE-1: PM-A1 opens a stored file > a not-previewable pdf is refused if its document kind cannot be read (the route never guesses a name)  1613ms
+   ✓ T-FILE-1: PM-A1 opens a stored file > the TTL on the signed URL is 60 seconds  2070ms
+   ✓ T-FILE-2..n: every refusal is the identical 404 > PM of another project in the same tenant  1567ms
+   ✓ T-FILE-2..n: every refusal is the identical 404 > PM of another tenant  1379ms
+   ✓ T-FILE-2..n: every refusal is the identical 404 > qs member of the project (not a PM)  1596ms
+   ✓ T-FILE-2..n: every refusal is the identical 404 > deactivated PM of the project  1541ms
+   ✓ T-FILE-2..n: every refusal is the identical 404 > a pending file (no object) as the owning PM  1789ms
+   ✓ T-FILE-2..n: every refusal is the identical 404 > a failed file (no object) as the owning PM  1508ms
+   ✓ T-FILE-2..n: every refusal is the identical 404 > a rejected file (no object) as the owning PM  1463ms
+   ✓ T-FILE-2..n: every refusal is the identical 404 > malformed or unknown id 0  335ms
+   ✓ T-FILE-2..n: every refusal is the identical 404 > malformed or unknown id 1  340ms
+   ✓ T-FILE-2..n: every refusal is the identical 404 > malformed or unknown id 2  1351ms
+   ✓ T-FILE-2..n: every refusal is the identical 404 > malformed or unknown id 3  334ms
+   ✓ T-FILE-2..n: every refusal is the identical 404 > the rate limit refuses with the same shape  2798ms
+   ✓ T-FILE-CTRL: step 2 swapped for a SERVICE-ROLE read; the app check alone must refuse (real cross-tenant data) > PM-A1 asks for tenant B's real stored file: 404 even though the row is returned to the route  1598ms
+   ✓ T-FILE-CTRL: step 2 swapped for a SERVICE-ROLE read; the app check alone must refuse (real cross-tenant data) > same swap, same-tenant OTHER project (A2) as PM-A1: 404 (isProjectPm refuses)  1781ms
+   ✓ T-FILE-CTRL: step 2 swapped for a SERVICE-ROLE read; the app check alone must refuse (real cross-tenant data) > same swap, a qs member of A1 asking for A1's stored file: 404 (not a PM)  1908ms
+   ✓ T-FILE-CTRL: step 2 swapped for a SERVICE-ROLE read; the app check alone must refuse (real cross-tenant data) > same swap, a DEACTIVATED PM of A1 asking for A1's stored file: 404 (active status must not rest on RLS alone)  1442ms
+   ✓ T-FILE-CTRL: step 2 swapped for a SERVICE-ROLE read; the app check alone must refuse (real cross-tenant data) > POSITIVE CONTROL: the owning PM with the same swap still gets the 302  2084ms
+   ✓ T-SIGN-0: a user JWT cannot sign (there is no storage.objects policy, 049:1016-1017) > the signed-in PM's own storage client is refused; the service role signs the same path  915ms
+   ✓ T-FILE (PM removed from the project) > a PM who was a member opens the file; after the membership row is removed the same request is the 404  3850ms
+stdout | test/pm-d30-shapes.test.tsx
+[pm-d30-shapes] buildPmKit: 8843 ms
+
+stdout | test/pm-d30-shapes.test.tsx
+[pm-d30-shapes] makeD30Shapes (dc 2 files + invoice 3 files, stored and acked): 10099 ms
+
+stdout | test/pm-d30-shapes.test.tsx
+[pm-d30-shapes] removeStoredObjects: 532 ms
+
+stdout | test/pm-d30-shapes.test.tsx
+[pm-d30-shapes] teardownCaptureKit: 4915 ms
+
+ ✓ test/pm-d30-shapes.test.tsx (11 tests) 48228ms
+   ✓ the fixtures really have the D-30 shape (service-role read-back) > DC: two stored files, the caption is the WhatsApp file name, awaiting_pm  816ms
+   ✓ the fixtures really have the D-30 shape (service-role read-back) > invoice: three stored files, caption is a file name, awaiting_pm automatic delivery with exactly ONE active self-link  1335ms
+   ✓ the PM page data layer on those shapes > detail of the multi-file DC: both files are listed as stored  1856ms
+   ✓ the PM page data layer on those shapes > detail of the invoice: three stored files, created from the invoice, its self-link is the only active link  2135ms
+   ✓ the PM page data layer on those shapes > the list shows both in the open group, and neither the list nor either detail carries the caption  4300ms
+   ✓ rendering the REAL detail objects of those shapes > the multi-file DC page: one plain link per stored file to /api/capture-files/<id>, no caption, nothing signed  1857ms
+   ✓ rendering the REAL detail objects of those shapes > the invoice page: three file links, the invoice ack label (never a DC one), no caption  1985ms
+   ✓ rendering the REAL detail objects of those shapes > the invoice page: every picker candidate row (a DC delivery) renders its DC ack label  2202ms
+   ✓ rendering the REAL detail objects of those shapes > the DC page: its own ack never renders an invoice label  1811ms
+   ✓ the file route on a multi-file document > EVERY stored file of the document opens for the owning PM (302), not only the first  4023ms
+   ✓ the file route on a multi-file document > a PM of another project is refused for the second file with the identical 404  1513ms
+ ✓ test/pm-bucket-guard.test.ts (5 tests) 64ms
+ ✓ test/pm-render.test.tsx (53 tests) 41ms
+ ✓ test/pm-unit.test.ts (199 tests) 19ms
+ ✓ test/pm-d1b-pure.test.ts (32 tests) 10ms
+stdout | test/pm-d1b-ui.test.tsx > F2: a closed overlay requests no image; one image per thumbnail > N=3 stored images: exactly N image elements, each the route path
+F2 counts: img=3 preload-image-links=3
+
+ ✓ test/pm-d1b-ui.test.tsx (20 tests) 9ms
+ ✓ test/pm-engineer-names.test.ts (5 tests) 9ms
+ ✓ test/pm-strings-approved.test.ts (88 tests) 4ms
+ ✓ test/pm-viewer-history.test.ts (11 tests) 2ms
+
+ Test Files  12 passed (12)
+      Tests  519 passed | 1 skipped (520)
+   Start at  08:03:45
+   Duration  501.54s (transform 245ms, setup 0ms, collect 1.07s, tests 499.36s, environment 1ms, prepare 220ms)
+
+[vitest exit 0]
+finished(UTC): 2026-11-14T02:42:07Z

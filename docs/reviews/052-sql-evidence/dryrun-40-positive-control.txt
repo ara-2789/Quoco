@@ -1,0 +1,22 @@
+== POSITIVE CONTROL: scratch copy with the wrapper's expected authenticated EXECUTE flipped true -> false
+HEAD 75facad2e763783831cec2f657765bafa1ea5999
+held sha256   cb5ca25780ddd33be3e23fdea84f6164dbdd480d2f990a3a6c4383eac412ae5d
+scratch sha256 4196e0e933a18ed0e2a604e2010d367f10227af0a84d39a0a273d4011e6f7686
+-- diff held vs scratch (exactly one changed line expected):
+830c830
+<       ('pm_classify_document',                'public',  'public.pm_classify_document(uuid,text)',               false, true,  false),
+---
+>       ('pm_classify_document',                'public',  'public.pm_classify_document(uuid,text)',               false, false, false),
+diff lines: 2
+psql:<local-path>:942: ERROR:  ACL_ASSERT_052: pm_classify_document:authenticated
+CONTEXT:  PL/pgSQL function inline_code_block line 125 at RAISE
+apply exit=3
+== state afterwards (nothing of 052 may remain)
+ md5 apply_material_inward_turn cecc170b26208d4b820402879e020271
+ md5 trg_capture_documents_before_insert b5467b20392b7e26449602acb9da2d00
+ md5 trg_capture_documents_before_update 4a7f470362e0bc7b7687737860d112f4
+
+ 052 objects: schema_private=false wrapper=false helper=false new_columns=0 constraints=0 kind_not_null=true ledger_052=false
+
+ rows: documents=0 deliveries=0 links=0 sessions_invoice=0
+

@@ -1,0 +1,68 @@
+'use strict'
+// 6d: dated status marks for every inventory row. Appends a section to the inventory file (earlier text is never rewritten).
+// Inputs: the inventory, the mechanical-control output (which blocks changed), and a family-run verdict map passed as JSON.
+const fs = require('fs')
+const ROOT = process.cwd()
+const INV = ROOT + '/docs/reviews/052-design/052-tests-changing-meaning.txt'
+const mech = fs.readFileSync(process.env.HOME + '/quoco-records/052-build/b2b/step6c-mechanical-control.txt', 'utf8')
+const verdict = JSON.parse(process.argv[2] || '{}') // file -> 'green' | 'red: <reason>' | 'not run'
+const DATE = '2026-11-14'
+
+const changedBlocks = new Set() // "file:line" of old blocks whose body changed / was removed
+for (const l of mech.split('\n')) {
+  const m = /^(?:FOUND  |MISSING) \| (\S+):(\d+) \| (BODY-CHANGED|REMOVED-OR-RENAMED)/.exec(l)
+  if (m) changedBlocks.add(`${m[1]}:${m[2]}`)
+}
+const PM_FILES = new Set(['test/helpers/pm-fixtures.ts', 'test/pm-actions.test.ts', 'test/pm-d30-shapes.test.tsx', 'test/pm-file-route.test.ts', 'test/pm-queries.test.ts', 'test/pm-render.test.tsx', 'test/pm-unit.test.ts'])
+const FIXTURE_DONE = {
+  'test/helpers/capture-fixtures.ts:340': 'DONE: makeDoc rebuilt on the real path (start -> file -> classify as the PM); classifyAsPm and makeUnclassifiedDoc added',
+  'test/helpers/capture-fixtures.ts:304': 'checked, no change: miTurnRaw passes whatever the test sends; the start now lands on step 2 and the tests were updated',
+  'test/capture-ingest.test.ts:86': 'DONE (N-E): seed() drops the kind turn',
+  'test/unit/capture-fixtures-clock.test.ts:18': 'DONE (N-E): fakeKit gains a PM client (jwt) for the classification call; T-CLK-1 now expects 2 clocked RPCs plus 1 classify call',
+  'test/capture-router.test.ts:163': 'DONE: seedInvoice no longer seeds mi_kind',
+  'test/capture-handler.test.ts:125': 'checked, no change: startSession only starts the flow through the RPC; the step it lands on is asserted by the tests',
+  'test/capture-checkin-n2-n13.test.ts:73': 'checked, no change: seeds a hindrance session, no kind',
+  'test/capture-checkin-n2-n13.test.ts:88': 'DONE via makeDoc: liveInvoiceSession is makeDoc(kit, "dc", label), absorbed',
+  'test/capture-files-immutability.test.ts:55': 'checked, no change: newPending drives a file turn; makeDoc is absorbed',
+}
+const rows = []
+let file = null
+for (const l of fs.readFileSync(INV, 'utf8').split('\n')) {
+  const h = /^== (test\/\S+)/.exec(l)
+  if (h) { file = h[1]; continue }
+  if (l.startsWith('== makeDocWithFile')) { file = null; continue }
+  const r = /^\s+:(\d+) \| (.*?) \| (DIRECT|MAKEDOC-only|FIXTURE)(?: \| (.*))?$/.exec(l)
+  if (r && file) rows.push({ file, line: Number(r[1]), title: r[2], cls: r[3], flags: r[4] || '' })
+}
+const out = []
+out.push('')
+out.push(`== STATUS MARKS, dated ${DATE} (block 2b). Appended; no earlier line above is changed. One row per inventory row (131), in inventory order.`)
+out.push('Legend: DONE = the test or fixture was edited in block 2b (see the commit); checked, no change = no edit was needed (reason given); NOT DONE = left alone on purpose or still owed.')
+out.push('Run verdicts below are from the 2026-11-14 family runs (evidence: docs/reviews/052-code-evidence/).')
+let n = 0
+for (const r of rows) {
+  const k = `${r.file}:${r.line}`
+  let st
+  if (PM_FILES.has(r.file)) {
+    st = `NOT DONE: ${r.file.includes('helpers') ? 'fixture' : 'PR-D test'} in the pm-* family; excluded from block 2b by Aravind's instruction (do not touch pm-fixtures.ts or the pm-* tests). Family run: ${verdict['pm'] || 'not run'}`
+  } else if (FIXTURE_DONE[k]) st = FIXTURE_DONE[k]
+  else if (r.cls === 'FIXTURE') st = 'checked, no change: fixture unaffected beyond what makeDoc absorbs'
+  else if (changedBlocks.has(k)) st = `DONE: test body updated (kind turn removed, string or flow expectation changed per the plan); file run: ${verdict[r.file] || 'see family run'}`
+  else if (r.cls === 'MAKEDOC-only') st = `checked, no change: setup absorbed by makeDoc (start -> file -> classify); the assertion is unchanged; file run: ${verdict[r.file] || 'see family run'}`
+  else st = `checked, no change: the block text is unchanged because its meaning holds (a text turn, an expiry or a seed that never depended on the kind); file run: ${verdict[r.file] || 'see family run'}`
+  out.push(`  [${DATE}] ${r.file}:${r.line} | ${r.title.slice(0, 70)} | ${r.cls} | ${st}`)
+  n++
+}
+out.push(`  rows marked: ${n}`)
+out.push('')
+out.push(`== ADDITIONS found by the PR-time mechanical control (S-A), ${DATE}: changed blocks that had no inventory row. None is a meaning change the plan did not expect.`)
+for (const a of [
+  ['test/capture-files-immutability.test.ts:369-378', 'T-D8-11 (three rows: "exactly one definition of %s", "051 adds exactly one function", "control: a planted second definition")', 'DONE: rewritten as the plan section B orders (pinned normalised headers typed from the catalog, alias table, every schema, planted-overload / stray public. / second private. controls). Meaning: the overload guard, now robust to the DOWN files and the held file.'],
+  ['test/capture-handler.test.ts:176', 'T-STR-1 every approved constant equals plan section 7', 'DONE: the six retired rows leave the map, the two new 052 texts join it, marked NOT approved. Plan section D.'],
+  ['test/capture-handler.test.ts:187', 'T-STR-2 the module exports exactly the approved names', 'DONE: 21 -> 17 exports (21 - 6 retired + 2 new), the six retired names asserted gone. Plan section D.'],
+  ['test/capture-handler.test.ts:250', 'ack 3 -> "what is missing", note -> done; ack 1 -> done', 'DONE (setup only): the kind turns are removed; the assertions are unchanged. Not flagged by the pattern scan.'],
+  ['test/capture-handler.test.ts:284', 'files present but none usable', 'DONE (setup only): the kind turn is removed; the assertion is unchanged. Not flagged by the pattern scan.'],
+  ['test/capture-handler.test.ts:400', 'T-SF-1c a failing post-RPC read is inside the same catch', 'DONE (mechanism changed, meaning kept): the post-RPC read that used to fail was the session read of the kind; it no longer exists, so the test now fails the document read of the ack at step 4, with a passing control.'],
+]) out.push(`  [${DATE}] ${a[0]} | ${a[1]} | ${a[2]}`)
+fs.appendFileSync(INV, out.join('\n') + '\n')
+console.log(`appended ${n} marks and ${6} additions`)

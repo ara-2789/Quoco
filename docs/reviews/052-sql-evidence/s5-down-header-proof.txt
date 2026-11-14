@@ -1,0 +1,19 @@
+ok
+HEAD 4e39627a68efd04857a8f780b2a89a217d9837dc
+== 052-down-testdb.sql: executable (non-comment, non-blank) lines, HEAD vs now
+IDENTICAL (451 executable lines)
+changed lines in git diff that are NOT comment lines: 0
+== 052-down-prod.sql: executable (non-comment, non-blank) lines, HEAD vs now
+IDENTICAL (451 executable lines)
+changed lines in git diff that are NOT comment lines: 0
+== the two DOWN files now differ in these lines only:
+< -- docs/reviews/052-down-testdb.sql  -- DOWN artifact for migration 052 (MI-KIND-REMOVAL), TEST-DB (exfccwlrhoutkgrlik
+< -- NEVER APPLY THIS FILE TO THE OTHER DATABASE (prod, jvxwqignooseazzmwhvl). That database has its own artifact,
+< -- docs/reviews/052-down-prod.sql: same body, its own header.
+> -- docs/reviews/052-down-prod.sql  -- DOWN artifact for migration 052 (MI-KIND-REMOVAL), PROD (jvxwqignooseazzmwhvl).
+> -- NEVER APPLY THIS FILE TO THE OTHER DATABASE (test-db, exfccwlrhoutkgrlikod). That database has its own artifact,
+> -- docs/reviews/052-down-testdb.sql: same body, its own header.
+== embedded body md5 check (6 expected EQUAL)
+   6 EQUAL
+bb21dfe0b7c358c1c36a95a3cc17d457526e9d3dd0e7580da915182cb530907f docs/reviews/052-down-testdb.sql
+344f4b2e5a1fe42c0502a63a47feee9e3980e830adbc2d03a9288610991cc43a docs/reviews/052-down-prod.sql

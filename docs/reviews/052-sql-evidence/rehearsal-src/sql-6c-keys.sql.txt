@@ -1,0 +1,2 @@
+SELECT count(*) FILTER (WHERE context ?| array['mi_last_sid','mi_kind','mi_document_id','mi_reask']) AS sessions_with_mi_keys,
+       count(*) FILTER (WHERE current_flow = 'invoice') AS invoice_flow_sessions FROM public.whatsapp_sessions;

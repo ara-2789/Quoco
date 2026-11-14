@@ -1,0 +1,13 @@
+#!/bin/bash
+. $HOME/.claude/jobs/2a6b4d65/tmp/lib.sh
+{
+hdr
+echo "STEP 1d detail (read-only; md5 prefix of phone only, no phone numbers)"
+Q "1d.2 summary" $T/sql/1d3.sql
+Q "1d.3 per-session" $T/sql/1d2.sql
+} > $OUT/step1d-invoice-sessions.txt 2>&1
+grep -v -E "Initialising|boundary|warning" $OUT/step1d-invoice-sessions.txt | sed -n 5,40p
+echo "---- per-session value distributions"
+grep -E '"(tenant_slug|has_mi_kind_key|expired|current_step)"' $OUT/step1d-invoice-sessions.txt | sort | uniq -c
+echo "rows listed: $(grep -c phone_md5_12 $OUT/step1d-invoice-sessions.txt)"
+grep -E '"updated_at"' $OUT/step1d-invoice-sessions.txt | sort | sed -n '1p;$p'

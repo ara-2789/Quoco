@@ -1,0 +1,8 @@
+#!/bin/bash
+# state.sh : full state block (md5s, objects/row counts, fingerprint, comments hash)
+. $HOME/.claude/jobs/2a6b4d65/tmp/lib.sh
+Q "state: three function md5s" $T/sql/1a.sql
+Q "state: objects and row counts" $T/sql/6state.sql
+Q "state: fingerprint" $T/sql/fp.sql
+Q "state: comments hash" $T/sql/cm.sql
+Q "state: ledger tail" $T/sql/1f.sql

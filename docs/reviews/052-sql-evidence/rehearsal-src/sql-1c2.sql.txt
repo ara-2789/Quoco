@@ -1,0 +1,4 @@
+-- A3b join as the held file defines it: deliveries x WHERE x.dc_document_id = d.id OR x.created_from_invoice_id = d.id
+SELECT n_del AS deliveries_per_document, count(*) AS documents FROM (
+  SELECT d.id, (SELECT count(*) FROM public.deliveries x WHERE x.dc_document_id = d.id OR x.created_from_invoice_id = d.id) AS n_del
+  FROM public.capture_documents d) s GROUP BY n_del ORDER BY 1;

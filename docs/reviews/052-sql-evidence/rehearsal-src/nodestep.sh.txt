@@ -1,0 +1,15 @@
+#!/bin/bash
+# nodestep.sh <subcommand> <outfile> : run a b2a.cjs subcommand; output (with a header) to <outfile>; never prints secrets
+. $HOME/.claude/jobs/2a6b4d65/tmp/lib.sh
+export NODE_PATH=$WT/node_modules
+export B2A_ENV_FILE=$MAIN/.env.test
+export B2A_KIT_FILE=$T/kit-b2a.json
+export B2A_SQL_OUT=$T/sql/gen-$1.sql
+{
+hdr
+echo "script: b2a.cjs sha256 $(shasum -a 256 $T/b2a.cjs | cut -d' ' -f1)  subcommand: $1"
+chkref
+node $T/b2a.cjs $1 2>&1
+echo "[exit $?]"
+} > "$2" 2>&1
+cat "$2"

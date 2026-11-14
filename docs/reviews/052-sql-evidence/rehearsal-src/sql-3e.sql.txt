@@ -1,0 +1,2 @@
+SELECT attname, format_type(atttypid,atttypmod) AS type, attnotnull AS not_null, atthasdef AS has_default FROM pg_attribute
+ WHERE attrelid='public.capture_documents'::regclass AND NOT attisdropped AND attname IN ('kind','kind_source','kind_set_at','kind_set_by','received_at') ORDER BY attname;

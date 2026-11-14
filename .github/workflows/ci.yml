@@ -173,7 +173,19 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
       - run: npm ci
-      - run: npm run lint:migrations
+      # SQL review round 1 (052), S-1: a gate must never be green without running. The lint's exit code alone
+      # cannot show that it ran (an entry guard once skipped main() and exited 0 with no output), so this step
+      # also requires the terminal "migration-lint:" verdict line and fails without it.
+      - name: Run migration lint (fails if it printed no verdict line)
+        run: |
+          set +e
+          npm run lint:migrations 2>&1 | tee lint-migrations.out
+          status=${PIPESTATUS[0]}
+          if ! grep -Eq '^migration-lint:' lint-migrations.out; then
+            echo "::error::lint:migrations printed no 'migration-lint:' verdict line, so it did not run"
+            exit 1
+          fi
+          exit $status
 
   file-size-lint:
     name: File Size Lint

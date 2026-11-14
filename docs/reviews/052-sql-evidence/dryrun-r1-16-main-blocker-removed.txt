@@ -1,0 +1,3 @@
+== 3c.4 remove the blocker as the plan describes: a PM classifies the unclassified document (a kind is never guessed)
+OK {"kind": "invoice", "delivery_id": "bf102a60-4dd9-4eb5-ada6-d919799c23b6", "document_id": "adb4b475-6d51-4db9-8d0c-4b8786f8bd4d", "self_link_id": "38ff0baf-5b4c-444a-ac80-b3dbc5e1b489", "already_classified": false}
+unclassified now: 0

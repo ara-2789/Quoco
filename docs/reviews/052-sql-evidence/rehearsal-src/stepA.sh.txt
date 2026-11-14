@@ -1,0 +1,21 @@
+#!/bin/bash
+. $HOME/.claude/jobs/2a6b4d65/tmp/lib.sh
+{
+hdr
+echo "TIME RULE: IST now = $(TZ=Asia/Kolkata date +%H:%M) (barred 08:25-08:40 and 18:25-18:40)"
+Q "A1 re-count, per tenant" $T/sql/A1.sql
+Q "A3 newest activity on test-db" $T/sql/A3.sql
+} > $OUT/stepA-precheck.txt 2>&1
+grep -v -E "Initialising|boundary|warning" $OUT/stepA-precheck.txt | grep -E '^(timestamp|HEAD|TIME|\$ cat)|"|exit'
+# A2 backup (not printed)
+chkref > $OUT/stepA2-backup-log.txt
+supabase --workdir $MAIN db query --linked -f $T/sql/A2.sql > $T/a2raw.json 2>>$OUT/stepA2-backup-log.txt
+echo "A2 exit $?" >> $OUT/stepA2-backup-log.txt
+node -e '
+const fs=require("fs");const o=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
+let b=o.rows[0].backup; if(typeof b==="string") b=JSON.parse(b);
+fs.writeFileSync(process.argv[2],JSON.stringify(b,null,2));
+console.log("backup rows:",b.length);
+' $T/a2raw.json $OUT/leaked-invoice-sessions-backup.json
+shasum -a 256 $OUT/leaked-invoice-sessions-backup.json
+rm -f $T/a2raw.json

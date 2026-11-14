@@ -1,0 +1,6 @@
+SELECT 'auth_users_at_quoco.test' AS k, count(*)::text AS v FROM auth.users WHERE email LIKE '%@quoco.test'
+UNION ALL SELECT 'public_users_ZZTestCapture', count(*)::text FROM public.users WHERE full_name LIKE 'ZZTestCapture-%'
+UNION ALL SELECT 'tenants_zz-test-capture', count(*)::text FROM public.tenants WHERE slug LIKE 'zz-test-capture-%'
+UNION ALL SELECT 'auth_users_total', count(*)::text FROM auth.users
+UNION ALL SELECT 'public_users_total', count(*)::text FROM public.users
+ORDER BY 1;

@@ -1,0 +1,36 @@
+#!/bin/bash
+# The seven on-disk tripwire controls (step 3). A planted file is NEVER committed: it is created in the forward set
+# (supabase/migrations/999_planted_control.sql), the tripwire runs and must go RED at "THE TRIPWIRE", the file is deleted, and
+# `git status --porcelain` is printed (must be empty).
+WT=<worktree>
+OUT=$HOME/quoco-records/052-build/b2c
+F=$OUT/step4-tripwire-controls.txt
+P=$WT/supabase/migrations/999_planted_control.sql
+cd $WT
+: > $F
+run() { # name, sql, expectation (RED|GREEN)
+  local name=$1 sql=$2 want=$3
+  {
+  echo; echo "================ CONTROL $name (expected: $want)"
+  echo "HEAD: $(git rev-parse HEAD)"
+  echo "git status --porcelain BEFORE: [$(git status --porcelain | tr '\n' ';')]"
+  if [ -n "$sql" ]; then printf '%s\n' "$sql" > $P; echo "planted file: supabase/migrations/999_planted_control.sql sha256 $(shasum -a 256 $P | cut -d' ' -f1)"; echo "planted text:"; cat $P; else echo "no planted file (real tree, DOWN files present: $(ls docs/reviews/052-down-*.sql | tr '\n' ' '))"; fi
+  npx vitest run test/capture-kind-deferred.test.ts -t "THE TRIPWIRE" > $OUT/.ctl.tmp 2>&1
+  rc=$?
+  grep -E "Tests  " $OUT/.ctl.tmp | head -2
+  echo "--- assertion message of THE TRIPWIRE row:"
+  grep -m1 -A16 "AssertionError" $OUT/.ctl.tmp | cut -c1-420
+  echo "vitest exit: $rc  => $([ $rc -ne 0 ] && echo RED || echo GREEN)  (expected $want)"
+  rm -f $P
+  echo "planted file removed; git status --porcelain AFTER: [$(git status --porcelain | tr '\n' ';')]"
+  } >> $F 2>&1
+}
+run "1 second inserting function in a planted held file" "CREATE FUNCTION public.second_inserter() RETURNS void LANGUAGE plpgsql AS \$\$ BEGIN INSERT INTO public.capture_documents (tenant_id, received_at) VALUES (NULL, now()); END; \$\$;" RED
+run "2 forward INSERT without received_at (a later redefinition of the RPC)" "CREATE OR REPLACE FUNCTION public.apply_material_inward_turn(p_phone_number text, p_tenant_id uuid, p_user_id uuid, p_project_id uuid, p_message text, p_message_sid text, p_media jsonb DEFAULT NULL::jsonb, p_start_flow boolean DEFAULT false, p_now timestamp with time zone DEFAULT now(), p_test_sleep_ms integer DEFAULT NULL::integer) RETURNS jsonb LANGUAGE plpgsql AS \$\$ DECLARE v_r timestamptz; BEGIN SELECT pm.created_at INTO v_r FROM public.processed_messages pm WHERE pm.message_sid = p_message_sid; INSERT INTO public.capture_documents (tenant_id, project_id, sent_by, source_message_sid) VALUES (p_tenant_id, p_project_id, p_user_id, p_message_sid); RETURN NULL; END; \$\$;" RED
+run "3 planted MERGE" "CREATE FUNCTION public.merger() RETURNS void LANGUAGE plpgsql AS \$\$ BEGIN MERGE INTO public.capture_documents d USING (SELECT 1) s ON false WHEN NOT MATCHED THEN INSERT (tenant_id) VALUES (NULL); END; \$\$;" RED
+run "4 lowercase unqualified INSERT" "create function public.lc() returns void language sql as \$\$ insert into capture_documents (tenant_id) values (null) \$\$;" RED
+run "5 dynamic EXECUTE naming the table" "CREATE FUNCTION public.dyn() RETURNS void LANGUAGE plpgsql AS \$\$ BEGIN EXECUTE format('INSERT INTO public.%I (tenant_id) VALUES (NULL)', 'capture_documents'); END; \$\$;" RED
+run "6 a later DROP of the inserting function (zero sites)" "DROP FUNCTION IF EXISTS public.apply_material_inward_turn(text, uuid, uuid, uuid, text, text, jsonb, boolean, timestamp with time zone, integer);" RED
+run "0 BENIGN: a COMMENT ON an unrelated table (never names capture_documents)" "COMMENT ON TABLE public.tenants IS 'benign planted control';" GREEN
+run "7 final run, DOWN files present, nothing planted" "" GREEN
+grep -E "^================|vitest exit|AFTER" $F

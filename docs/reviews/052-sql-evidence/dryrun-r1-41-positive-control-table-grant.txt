@@ -1,0 +1,22 @@
+== POSITIVE CONTROL 2 (S-3): scratch copy where the table-privilege list that must be FALSE has INSERT replaced by SELECT (authenticated and service_role DO hold SELECT)
+HEAD beb0d216ced4c2b36b7898d95616972a4a01d90a
+held sha256    2c4ee3bca72fc6f89ec37821594de565490bf65740be701470d5e8789586357e
+scratch sha256 a87dc27407e79c3c7bcf3216bffc92ca6573a64ca1e9f631a80a6db25e11979a
+-- diff held vs scratch (exactly one changed line expected):
+897c897
+<     FOREACH v_priv IN ARRAY ARRAY['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE'] LOOP
+---
+>     FOREACH v_priv IN ARRAY ARRAY['SELECT', 'UPDATE', 'DELETE', 'TRUNCATE'] LOOP
+diff lines: 2
+psql:<local-path>:977: ERROR:  ACL_ASSERT_052: table_grant:authenticated:SELECT table_grant:service_role:SELECT
+CONTEXT:  PL/pgSQL function inline_code_block line 150 at RAISE
+apply exit=3
+== state afterwards (nothing of 052 may remain)
+ md5 apply_material_inward_turn cecc170b26208d4b820402879e020271
+ md5 trg_capture_documents_before_insert b5467b20392b7e26449602acb9da2d00
+ md5 trg_capture_documents_before_update 4a7f470362e0bc7b7687737860d112f4
+
+ 052 objects: schema_private=false wrapper=false helper=false new_columns=0 constraints=0 kind_not_null=true ledger_052=false
+
+ rows: documents=0 deliveries=0 links=0 sessions_invoice=0
+

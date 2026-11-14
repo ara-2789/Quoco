@@ -1,0 +1,84 @@
+timestamp(UTC): 2026-11-13T19:00:03Z
+HEAD: 99e594d5b66fe9bf9ef72db074fe7f0ea8c4fd70
+git status --porcelain: [ M test/capture-checkin-n2-n13.test.ts; M test/capture-engineer-flow.test.ts; M test/capture-handler.test.ts; M test/capture-ingest.test.ts; M test/capture-races.test.ts; M test/capture-router.test.ts; M test/capture-webhook.test.ts; M test/helpers/capture-fixtures.ts; M test/unit/capture-fixtures-clock.test.ts;?? test/capture-teardown-leak.test.ts;]
+project ref (SUPABASE_TEST_PROJECT_REF of .env.test): exfccwlrhoutkgrlikod  (the vitest guard aborts unless it is exfccwlrhoutkgrlikod)
+command: npx vitest run test/capture-ingest.test.ts
+
+ RUN  v3.2.7 <worktree>
+
+stdout | test/capture-ingest.test.ts > T-PRE-1 (U3): the capture-documents bucket on test-db matches migration 049 > has the approved settings
+T-PRE-1 RAW bucket: {"id":"capture-documents","name":"capture-documents","owner":"","public":false,"versioning_status":"DISABLED","file_size_limit":16777216,"allowed_mime_types":["application/pdf","image/jpeg","image/png","image/webp"],"created_at":"2026-10-12T07:20:45.883Z","updated_at":"2026-10-12T07:20:45.883Z"}
+
+stdout | test/capture-ingest.test.ts > T-PRE-1 (U3): the capture-documents bucket on test-db matches migration 049 > T-S2-REAL: the bucket refuses a non-allowed content type (why uploadOnce must pass contentType)
+T-S2-REAL RAW error: {"status":400,"statusCode":"415","message":"mime type text/plain is not supported"}
+
+stdout | test/capture-ingest.test.ts > T-C4-1 / T-C5: filtered updates touch 0 rows on a terminal row; a refusal is an alert, never a retry > T-C4-1 + control: with the status filter a stored row is 0 rows and NO error; without it the 051 trigger answers QE011
+T-C5-2 RAW QE011 error.code from test-db: {"code":"QE011","message":"E11"}
+
+stdout | test/capture-ingest.test.ts > T-RETRY: the object already exists at the row-owned path > T-RETRY-1 (U2): equal bytes -> certified without a second write; the raw duplicate error is printed
+U2 RAW duplicate-upload error object from test-db: {"name":"StorageApiError","status":400,"statusCode":"409","message":"The resource already exists"}
+
+stdout | test/capture-ingest.test.ts
+T-HYG-1 rows: start=0 peak=67 after=0; objects: start=0 peak=29 after=0; jobs after=0; tracked paths=68
+U2 RAW duplicate-upload error object from test-db: {"name":"StorageApiError","status":400,"statusCode":"409","message":"The resource already exists"}
+
+ ✓ test/capture-ingest.test.ts (56 tests) 160880ms
+   ✓ T-PRE-1 (U3): the capture-documents bucket on test-db matches migration 049 > has the approved settings  654ms
+   ✓ T-PRE-1 (U3): the capture-documents bucket on test-db matches migration 049 > T-S2-REAL: the bucket refuses a non-allowed content type (why uploadOnce must pass contentType)  2243ms
+   ✓ T-OK-1: one JPEG is downloaded, checked, stored and certified in ONE update > stores the original bytes at the row-owned extensionless path  3230ms
+   ✓ T-PDF / T-SIZE-4: types from bytes, rejections, preview_state (one document, six files) > handles every kind of file independently and writes the right shape for each  8452ms
+   ✓ T-PDF / T-SIZE-4: types from bytes, rejections, preview_state (one document, six files) > S4: %PDF- only after byte 1024 is wrong_type, nothing stored  2369ms
+   ✓ T-PDF / T-SIZE-4: types from bytes, rejections, preview_state (one document, six files) > T-SIZE-4 / S5: too_large records reject_reason AND the type detected on the first chunk; byte_size stays NULL; nothing stored  2844ms
+   ✓ T-PDF / T-SIZE-4: types from bytes, rejections, preview_state (one document, six files) > T-SIZE-1: a file of exactly 16777216 bytes is stored (the bucket limit is the same number)  6774ms
+   ✓ T-ID: the payload is checked against the rows BEFORE any download (the whole job fails closed) > T-ID-1 cross-tenant: the payload names tenant B for tenant A's files  2194ms
+   ✓ T-ID: the payload is checked against the rows BEFORE any download (the whole job fails closed) > T-ID-2a wrong project  1979ms
+   ✓ T-ID: the payload is checked against the rows BEFORE any download (the whole job fails closed) > T-ID-2b wrong document  2095ms
+   ✓ T-ID: the payload is checked against the rows BEFORE any download (the whole job fails closed) > T-ID-2c wrong message SID  2023ms
+   ✓ T-ID: the payload is checked against the rows BEFORE any download (the whole job fails closed) > T-ID-2d a file id that does not exist  2037ms
+   ✓ T-ID: the payload is checked against the rows BEFORE any download (the whole job fails closed) > T-ID-3 one mismatched file poisons the whole job (the other two are NOT processed)  2048ms
+   ✓ T-SKIP: stored and rejected rows are skipped (no download, no storage call, no write) > T-SKIP-1/2: a second run over a stored and a rejected row touches nothing  3424ms
+   ✓ T-SKIP: stored and rejected rows are skipped (no download, no storage call, no write) > CONTROL: the same payload over PENDING rows does fetch  2437ms
+   ✓ T-C4-1 / T-C5: filtered updates touch 0 rows on a terminal row; a refusal is an alert, never a retry > T-C4-1 + control: with the status filter a stored row is 0 rows and NO error; without it the 051 trigger answers QE011  3242ms
+   ✓ T-C4-1 / T-C5: filtered updates touch 0 rows on a terminal row; a refusal is an alert, never a retry > T-C5-1: error code QE011 is ONE event, exactly one update attempt, the job completes (no retry)  2469ms
+   ✓ T-C4-1 / T-C5: filtered updates touch 0 rows on a terminal row; a refusal is an alert, never a retry > T-C5-1: error code QE009 is ONE event, exactly one update attempt, the job completes (no retry)  2254ms
+   ✓ T-C4-1 / T-C5: filtered updates touch 0 rows on a terminal row; a refusal is an alert, never a retry > T-C5-1: error code QE014 is ONE event, exactly one update attempt, the job completes (no retry)  2489ms
+   ✓ T-C4-1 / T-C5: filtered updates touch 0 rows on a terminal row; a refusal is an alert, never a retry > T-C5-1: error code 23514 is ONE event, exactly one update attempt, the job completes (no retry)  2343ms
+   ✓ T-C4-1 / T-C5: filtered updates touch 0 rows on a terminal row; a refusal is an alert, never a retry > T-C5-1: error code 42501 is ONE event, exactly one update attempt, the job completes (no retry)  2432ms
+   ✓ T-C4-1 / T-C5: filtered updates touch 0 rows on a terminal row; a refusal is an alert, never a retry > CONTROL: a code outside the set takes the retry path (the handler throws)  1968ms
+   ✓ T-S1: a 0-row UPDATE is re-read and is never counted as a fresh store > T-S1-1: the row becomes stored (different sha) between the step-2 read and the UPDATE -> update_noop, not counted  3116ms
+   ✓ T-S1: a 0-row UPDATE is re-read and is never counted as a fresh store > T-S1-2: the row became stored with the SAME sha256 and storage_path -> "already done", not a fresh store, no event  3148ms
+   ✓ T-S2: a deterministic storage 4xx other than duplicate ends the file as failed + one event, no retry > mime/size-style rejection  2469ms
+   ✓ T-S2: a deterministic storage 4xx other than duplicate ends the file as failed + one event, no retry > a 5xx storage error is retryable and writes nothing  2100ms
+   ✓ T-RETRY: the object already exists at the row-owned path > T-RETRY-1 (U2): equal bytes -> certified without a second write; the raw duplicate error is printed  4533ms
+   ✓ T-RETRY: the object already exists at the row-owned path > T-RETRY-2: DIFFERENT bytes -> the row is failed, one object_conflict event, the existing object is NOT overwritten  3505ms
+   ✓ T-RETRY: the object already exists at the row-owned path > CONTROL for T-RETRY-2: a raw upsert:true DOES overwrite, so the byte read-back assertion can fail  3153ms
+   ✓ T-RETRY: the object already exists at the row-owned path > T-RETRY-3: the existing-object download fails -> retryable, row stays pending, the object is untouched  2918ms
+   ✓ T-RETRY: the object already exists at the row-owned path > T-RETRY-4: upload ok, UPDATE fails -> attempt 2 certifies the same object; one object, one row, upsert:false throughout  4938ms
+   ✓ T-MULTI / T-S3: per-file independence and the per-job deadline > T-MULTI-1/2: a failing file does not block the others; the retry only touches what is unfinished  4183ms
+   ✓ T-MULTI / T-S3: per-file independence and the per-job deadline > T-MULTI-3: after the start gate (20 s) no NEW file is started; the rest are deferred and stay pending  2608ms
+   ✓ T-MULTI / T-S3: per-file independence and the per-job deadline > T-S3-1: the 90 s job deadline passes before the upload -> NO upload, the file is deferred, the row stays pending  2097ms
+   ✓ T-MULTI / T-S3: per-file independence and the per-job deadline > T-S3-2: the deadline passes between the upload and the UPDATE -> no UPDATE; the retry certifies the identical object  4553ms
+   ✓ T-DL: after the last attempt, rows still pending are moved to failed in ONE update > T-DL-1: 3 pending -> failed, the stored one is untouched, one counts-only event  3311ms
+   ✓ T-DL: after the last attempt, rows still pending are moved to failed in ONE update > T-DL-1b: nothing pending -> no event, no error  2805ms
+   ✓ T-DL: after the last attempt, rows still pending are moved to failed in ONE update > T-DL-2: a payload naming ANOTHER tenant cannot move this tenant's rows  1930ms
+   ✓ T-DL: after the last attempt, rows still pending are moved to failed in ONE update > T-DL-3: a database error throws (the tick wraps it and sends its own event)  1572ms
+   ✓ T-TW: the download > T-TW-2: HTTP 401 writes nothing, stays pending, and the message carries the digits only  2079ms
+   ✓ T-TW: the download > T-TW-2: HTTP 404 writes nothing, stays pending, and the message carries the digits only  1915ms
+   ✓ T-TW: the download > T-TW-2: HTTP 410 writes nothing, stays pending, and the message carries the digits only  1950ms
+   ✓ T-TW: the download > T-TW-2: HTTP 429 writes nothing, stays pending, and the message carries the digits only  2022ms
+   ✓ T-TW: the download > T-TW-2: HTTP 500 writes nothing, stays pending, and the message carries the digits only  2045ms
+   ✓ T-TW: the download > T-TW-2: HTTP 503 writes nothing, stays pending, and the message carries the digits only  1948ms
+   ✓ T-TW: the download > T-TW-5: a url with the wrong http scheme is never fetched; the row is failed with one url_guard event  2176ms
+   ✓ T-TW: the download > T-TW-5: a url with the wrong other host is never fetched; the row is failed with one url_guard event  2430ms
+   ✓ T-TW: the download > T-TW-5: a url with the wrong other account is never fetched; the row is failed with one url_guard event  2455ms
+   ✓ T-MARK-1: markedCount counts only quarantined rows whose failed-write was confirmed as exactly one row > the failed-write matches 0 rows -> one url_guard event, count 1, markedCount 0  2051ms
+   ✓ T-MARK-1: markedCount counts only quarantined rows whose failed-write was confirmed as exactly one row > the failed-write is refused by the database (42501) -> count 1, markedCount 0  1982ms
+   ✓ T-MARK-1: markedCount counts only quarantined rows whose failed-write was confirmed as exactly one row > mixed: two url_guard rows, the first marked and the second matching 0 rows -> count 2, markedCount 1  2401ms
+
+ Test Files  1 passed (1)
+      Tests  56 passed (56)
+   Start at  00:30:03
+   Duration  161.07s (transform 62ms, setup 0ms, collect 66ms, tests 160.88s, environment 0ms, prepare 18ms)
+
+[vitest exit 0]
+finished(UTC): 2026-11-13T19:02:45Z

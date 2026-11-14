@@ -1,0 +1,18 @@
+timestamp(UTC): 2026-11-13T18:50:52Z
+HEAD: 99e594d5b66fe9bf9ef72db074fe7f0ea8c4fd70
+git status --porcelain: [ M test/capture-checkin-n2-n13.test.ts; M test/capture-engineer-flow.test.ts; M test/capture-handler.test.ts; M test/capture-ingest.test.ts; M test/capture-races.test.ts; M test/capture-router.test.ts; M test/capture-webhook.test.ts; M test/helpers/capture-fixtures.ts; M test/unit/capture-fixtures-clock.test.ts;?? test/capture-teardown-leak.test.ts;]
+project ref (SUPABASE_TEST_PROJECT_REF of .env.test): exfccwlrhoutkgrlikod  (the vitest guard aborts unless it is exfccwlrhoutkgrlikod)
+command: npx vitest run test/unit/capture-fixtures-clock.test.ts test/unit/material-inward-strings.test.ts
+
+ RUN  v3.2.7 <worktree>
+
+ ✓ test/unit/capture-fixtures-clock.test.ts (4 tests) 30ms
+ ✓ test/unit/material-inward-strings.test.ts (4 tests) 1ms
+
+ Test Files  2 passed (2)
+      Tests  8 passed (8)
+   Start at  00:20:52
+   Duration  249ms (transform 38ms, setup 0ms, collect 13ms, tests 31ms, environment 0ms, prepare 40ms)
+
+[vitest exit 0]
+finished(UTC): 2026-11-13T18:50:53Z

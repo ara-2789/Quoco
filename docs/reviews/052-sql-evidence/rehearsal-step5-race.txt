@@ -1,0 +1,94 @@
+timestamp(UTC): 2026-11-13T17:12:43Z
+HEAD: 1901be540add25ebe1898f57ad00dd1eb573999c
+project-ref (supabase/.temp/project-ref of --workdir <main-checkout>): exfccwlrhoutkgrlikod
+git status --porcelain: []
+script: b2a.cjs sha256 37b7b934767bd37b267f9e6f92a8b54b2d889c659f15d0dd5b7af8b0268acc30  subcommand: race
+$ cat supabase/.temp/project-ref  -> exfccwlrhoutkgrlikod
+target ref (from SUPABASE_TEST_URL): exfccwlrhoutkgrlikod
+
+=== race (i: same kind dc/dc), 20 runs on fresh documents
+run same-1: pm1/dc: HTTP 200 ac=false [65801-66125ms] || pm1b/dc: HTTP 200 ac=true [65802-66408ms] || client overlap 323ms
+    final: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0 => OK
+run same-2: pm1/dc: HTTP 200 ac=false [68209-68453ms] || pm1b/dc: HTTP 200 ac=true [68210-68703ms] || client overlap 243ms
+    final: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0 => OK
+run same-3: pm1/dc: HTTP 200 ac=false [70424-70680ms] || pm1b/dc: HTTP 200 ac=true [70425-70911ms] || client overlap 255ms
+    final: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0 => OK
+run same-4: pm1/dc: HTTP 200 ac=false [72740-72980ms] || pm1b/dc: HTTP 200 ac=true [72741-73227ms] || client overlap 239ms
+    final: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0 => OK
+run same-5: pm1/dc: HTTP 200 ac=false [74964-75200ms] || pm1b/dc: HTTP 200 ac=true [74964-75457ms] || client overlap 236ms
+    final: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0 => OK
+run same-6: pm1/dc: HTTP 200 ac=false [77291-77529ms] || pm1b/dc: HTTP 200 ac=true [77292-77798ms] || client overlap 237ms
+    final: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0 => OK
+run same-7: pm1/dc: HTTP 200 ac=false [79597-79904ms] || pm1b/dc: HTTP 200 ac=true [79598-80149ms] || client overlap 306ms
+    final: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0 => OK
+run same-8: pm1/dc: HTTP 200 ac=false [82032-82267ms] || pm1b/dc: HTTP 200 ac=true [82032-82507ms] || client overlap 235ms
+    final: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0 => OK
+run same-9: pm1/dc: HTTP 200 ac=false [84320-84657ms] || pm1b/dc: HTTP 200 ac=true [84320-84904ms] || client overlap 337ms
+    final: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0 => OK
+run same-10: pm1/dc: HTTP 200 ac=false [86807-87115ms] || pm1b/dc: HTTP 200 ac=true [86807-87364ms] || client overlap 308ms
+    final: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0 => OK
+run same-11: pm1/dc: HTTP 200 ac=false [89195-89433ms] || pm1b/dc: HTTP 200 ac=true [89195-89673ms] || client overlap 238ms
+    final: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0 => OK
+run same-12: pm1/dc: HTTP 200 ac=false [91332-91578ms] || pm1b/dc: HTTP 200 ac=true [91333-91821ms] || client overlap 245ms
+    final: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0 => OK
+run same-13: pm1/dc: HTTP 200 ac=false [93604-93845ms] || pm1b/dc: HTTP 200 ac=true [93604-94183ms] || client overlap 241ms
+    final: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0 => OK
+run same-14: pm1/dc: HTTP 200 ac=false [96022-96273ms] || pm1b/dc: HTTP 200 ac=true [96022-96505ms] || client overlap 251ms
+    final: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0 => OK
+run same-15: pm1/dc: HTTP 200 ac=false [98253-98588ms] || pm1b/dc: HTTP 200 ac=true [98253-98821ms] || client overlap 335ms
+    final: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0 => OK
+run same-16: pm1/dc: HTTP 200 ac=false [688-938ms] || pm1b/dc: HTTP 200 ac=true [688-1175ms] || client overlap 250ms
+    final: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0 => OK
+run same-17: pm1/dc: HTTP 200 ac=false [3133-3400ms] || pm1b/dc: HTTP 200 ac=true [3133-3633ms] || client overlap 267ms
+    final: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0 => OK
+run same-18: pm1/dc: HTTP 200 ac=false [5443-5755ms] || pm1b/dc: HTTP 200 ac=true [5443-5994ms] || client overlap 312ms
+    final: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0 => OK
+run same-19: pm1/dc: HTTP 200 ac=false [7698-8005ms] || pm1b/dc: HTTP 200 ac=true [7698-8265ms] || client overlap 307ms
+    final: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0 => OK
+run same-20: pm1/dc: HTTP 200 ac=false [10256-10495ms] || pm1b/dc: HTTP 200 ac=true [10257-10770ms] || client overlap 238ms
+    final: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0 => OK
+
+=== race (ii: different kinds dc/invoice), 20 runs on fresh documents
+run diff-1: pm1/dc: HTTP 200 ac=false [12716-12961ms] || pm1b/invoice: HTTP 400 code=QE011 [12717-13191ms] || client overlap 244ms
+    final: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0 => OK
+run diff-2: pm1/invoice: HTTP 200 ac=false [15171-15479ms] || pm1b/dc: HTTP 400 code=QE011 [15171-15787ms] || client overlap 308ms
+    final: doc{kind=invoice,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=1 => OK
+run diff-3: pm1/dc: HTTP 200 ac=false [17674-17940ms] || pm1b/invoice: HTTP 400 code=QE011 [17675-18186ms] || client overlap 265ms
+    final: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0 => OK
+run diff-4: pm1/invoice: HTTP 200 ac=false [19899-20137ms] || pm1b/dc: HTTP 400 code=QE011 [19899-20386ms] || client overlap 238ms
+    final: doc{kind=invoice,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=1 => OK
+run diff-5: pm1/dc: HTTP 200 ac=false [22211-22453ms] || pm1b/invoice: HTTP 400 code=QE011 [22212-22689ms] || client overlap 241ms
+    final: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0 => OK
+run diff-6: pm1/invoice: HTTP 200 ac=false [24499-24743ms] || pm1b/dc: HTTP 400 code=QE011 [24499-25028ms] || client overlap 244ms
+    final: doc{kind=invoice,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=1 => OK
+run diff-7: pm1/dc: HTTP 200 ac=false [26950-27259ms] || pm1b/invoice: HTTP 400 code=QE011 [26950-27502ms] || client overlap 309ms
+    final: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0 => OK
+run diff-8: pm1/invoice: HTTP 200 ac=false [29306-29548ms] || pm1b/dc: HTTP 400 code=QE011 [29306-29785ms] || client overlap 242ms
+    final: doc{kind=invoice,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=1 => OK
+run diff-9: pm1/dc: HTTP 200 ac=false [31715-31951ms] || pm1b/invoice: HTTP 400 code=QE011 [31715-32271ms] || client overlap 236ms
+    final: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0 => OK
+run diff-10: pm1/invoice: HTTP 200 ac=false [34156-34399ms] || pm1b/dc: HTTP 400 code=QE011 [34156-34638ms] || client overlap 243ms
+    final: doc{kind=invoice,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=1 => OK
+run diff-11: pm1/dc: HTTP 200 ac=false [36540-36775ms] || pm1b/invoice: HTTP 400 code=QE011 [36541-37017ms] || client overlap 234ms
+    final: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0 => OK
+run diff-12: pm1/invoice: HTTP 200 ac=false [38849-39096ms] || pm1b/dc: HTTP 400 code=QE011 [38850-39583ms] || client overlap 246ms
+    final: doc{kind=invoice,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=1 => OK
+run diff-13: pm1/dc: HTTP 200 ac=false [41593-41841ms] || pm1b/invoice: HTTP 400 code=QE011 [41593-42076ms] || client overlap 248ms
+    final: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0 => OK
+run diff-14: pm1/invoice: HTTP 200 ac=false [44153-44458ms] || pm1b/dc: HTTP 400 code=QE011 [44153-44765ms] || client overlap 305ms
+    final: doc{kind=invoice,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=1 => OK
+run diff-15: pm1/dc: HTTP 200 ac=false [46686-46929ms] || pm1b/invoice: HTTP 400 code=QE011 [46686-47226ms] || client overlap 243ms
+    final: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0 => OK
+run diff-16: pm1/invoice: HTTP 200 ac=false [49117-49359ms] || pm1b/dc: HTTP 400 code=QE011 [49117-49680ms] || client overlap 242ms
+    final: doc{kind=invoice,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=1 => OK
+run diff-17: pm1/dc: HTTP 200 ac=false [51630-51883ms] || pm1b/invoice: HTTP 400 code=QE011 [51630-52148ms] || client overlap 253ms
+    final: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0 => OK
+run diff-18: pm1/invoice: HTTP 200 ac=false [53878-54141ms] || pm1b/dc: HTTP 400 code=QE011 [53879-54495ms] || client overlap 262ms
+    final: doc{kind=invoice,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=1 => OK
+run diff-19: pm1/dc: HTTP 200 ac=false [56483-56744ms] || pm1b/invoice: HTTP 400 code=QE011 [56483-57001ms] || client overlap 261ms
+    final: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0 => OK
+run diff-20: pm1/invoice: HTTP 200 ac=false [58776-59009ms] || pm1b/dc: HTTP 400 code=QE011 [58776-59237ms] || client overlap 233ms
+    final: doc{kind=invoice,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=1 => OK
+
+TOTALS {"same":{"runs":20,"ok":20},"diff":{"runs":20,"ok":20}} | runs whose two client requests overlapped in time: 40 (client-side only; see CLAUDE.md section 0 on what a local run can prove)
+[exit 0]

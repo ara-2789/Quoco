@@ -1,0 +1,5 @@
+BEGIN;
+SELECT id FROM public.capture_documents WHERE id = '4b9fd3c7-e4a1-4d15-9440-3f36f6d3da3f' FOR NO KEY UPDATE;
+SELECT pg_sleep(12);
+COMMIT;
+SELECT 'S1 committed (control)' AS s1;

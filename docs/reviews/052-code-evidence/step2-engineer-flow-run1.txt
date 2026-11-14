@@ -1,0 +1,87 @@
+timestamp(UTC): 2026-11-13T18:45:16Z
+HEAD: 99e594d5b66fe9bf9ef72db074fe7f0ea8c4fd70
+git status --porcelain: [ M test/capture-engineer-flow.test.ts; M test/helpers/capture-fixtures.ts;?? test/capture-teardown-leak.test.ts;]
+project ref (SUPABASE_TEST_PROJECT_REF of .env.test): exfccwlrhoutkgrlikod  (the vitest guard aborts unless it is exfccwlrhoutkgrlikod)
+command: npx vitest run test/capture-engineer-flow.test.ts
+
+ RUN  v3.2.7 <worktree>
+
+ ❯ test/capture-engineer-flow.test.ts (42 tests | 1 failed) 97328ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > T-E-1 / T-FLOW-1 start -> two files -> ack 1 closes: after the file turn 0 deliveries, 0 links, kind NULL, delivery_id key PRESENT and NULL; the PM classification creates the delivery  4811ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > T-E-1 the file turn still refuses QE012 and writes nothing when the processed_messages row is missing (050:313-320, kept)  1469ms
+   × 050 engineer flow (apply_material_inward_turn) > T-E-2 a stray step-1 session (a row left by the old flow) is read as step 2: a file turn works, a text re-asks 1614ms
+     → expected { outcome: 'reask', …(4) } to match object { outcome: 'reask', current_step: 2 }
+(3 matching properties omitted from actual)
+   ✓ 050 engineer flow (apply_material_inward_turn) > T-A28-1 / T-A18-1 invoice path: the file creates exactly one automatic delivery and one active self-link; ack 2 asks for the note  3502ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > T-A18-1 the same numbered question path runs after a DC and after an invoice; the engineer is never asked for a rate, total or quantity  3409ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > T-FLOW-2 ack 3 -> partial, step 4; a further file at S4 attaches to the same document (D-11) and the step stays  2730ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > T-FLOW-2 a file at S3 attaches to the same document and the session stays at S3 (D-11)  1900ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > T-S3-ACK-PARSE accepted ack form "1." -> yes  1917ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > T-S3-ACK-PARSE accepted ack form "2)" -> no  1924ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > T-S3-ACK-PARSE accepted ack form "3" -> partial  2069ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > T-S3-ACK-PARSE accepted ack form "1️⃣" -> yes  2042ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > T-S3-ACK-PARSE accepted ack form "2️⃣" -> no  2230ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > T-S3-ACK-PARSE accepted ack form "3️⃣" -> partial  1952ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > T-S3-ACK-PARSE "12" is NOT an ack: one re-ask, nothing stored  2114ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > T-FLOW-2 garbage at S3: one re-ask, then ack=unclear with the raw text as the note, and the flow CLOSES (never S4)  3420ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > T-FLOW-2 text at the file step (S2): one re-ask, then close with nothing recorded  3030ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > T-SID-DUP a repeated FILE SID writes nothing and returns the duplicate outcome  2975ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > T-SID-DUP-TEXT a repeated ACK SID writes nothing and raises nothing (the second ack would otherwise hit TR5 / QE011)  2612ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > T-SID-DUP-TEXT a repeated text SID in the middle of the flow (S2, a text at the file step) is a duplicate, not a second re-ask  2281ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > Q2-6 received_at is the processed_messages.created_at of the SAME SID, stored on the document and copied to the delivery at classification  2078ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > T-DATE-1 delivery_date is the IST date of received_at: processed_messages.created_at 2026-09-22T18:29:00Z -> 2026-09-22 (a UTC implementation would differ for the second)  1553ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > T-DATE-1 delivery_date is the IST date of received_at: processed_messages.created_at 2026-09-22T19:00:00Z -> 2026-09-23 (a UTC implementation would differ for the second)  1523ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > S-1 (SQL review r1) a P2 engineer sending the file into a P1 session is refused QE012 and NOTHING is written  4214ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > S-4 (SQL review r2) an engineer whose ONLY membership has role qs (not engineer) is refused QE012 and nothing is written  1812ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > N-1 (retired parser) "1." at the file step is not a kind: re-ask, still step 2, no mi_kind stored  1946ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > N-1 (retired parser) "2)" at the file step is not a kind: re-ask, still step 2, no mi_kind stored  1800ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > N-1 (retired parser) "2️⃣" at the file step is not a kind: re-ask, still step 2, no mi_kind stored  1885ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > N-1 (retired parser) "Invoice." at the file step is not a kind: re-ask, still step 2, no mi_kind stored  1815ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > N-1 (retired parser) "DC" at the file step is not a kind: re-ask, still step 2, no mi_kind stored  1836ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > N-1 (retired parser) "12" at the file step is not a kind: re-ask, still step 2, no mi_kind stored  2286ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > N-2 (SQL review r1) an ack with mi_document_id missing is refused QE012; nothing changes  1056ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > capture_ingest job contract: one job per file turn, payload carries tenant, project, document, SID and every file  1507ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > N8 every processed turn, including a re-ask, writes expires_at = p_now + 30 min and updated_at = p_now (T-A27-5)  1801ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > T-A27-1 / T-A27-2 expiry boundary: 29:59 idle is still active, 30:01 idle is expired (never tested at exactly 30:00)  2227ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > T-A27-1 the delivery of an expired session stays exactly as it was ("not acknowledged")  2421ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > T-A27-6 (SQL half) a turn that reaches the RPC after expiry writes ONLY the clear: expires_at / updated_at untouched  1981ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > expire_stale_material_inward: clears an expired invoice row once (true), then false; returns false for no row  1533ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > T-A27-7 (SQL half) expire_stale_material_inward leaves an expired MORNING session untouched  715ms
+   ✓ 050 engineer flow (apply_material_inward_turn) > a start over a live OTHER-flow session never creates this flow (reask) and an idle non-start is idle  1608ms
+   ✓ 050 grants of the two engineer-side functions (T-F5-4, real PostgREST calls) > anon is refused 42501 on both (a real anon-key call, not only the catalog)  509ms
+   ✓ 050 grants of the two engineer-side functions (T-F5-4, real PostgREST calls) > an authenticated PM is refused 42501 on both  856ms
+   ✓ 050 grants of the two engineer-side functions (T-F5-4, real PostgREST calls) > positive control: service_role succeeds on expire_stale_material_inward 270ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/capture-engineer-flow.test.ts > 050 engineer flow (apply_material_inward_turn) > T-E-2 a stray step-1 session (a row left by the old flow) is read as step 2: a file turn works, a text re-asks
+AssertionError: expected { outcome: 'reask', …(4) } to match object { outcome: 'reask', current_step: 2 }
+(3 matching properties omitted from actual)
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[2m  {[22m
+[32m-   "current_step": 2,[39m
+[31m+   "current_step": 1,[39m
+[2m    "outcome": "reask",[22m
+[2m  }[22m
+
+ ❯ test/capture-engineer-flow.test.ts:108:90
+    106|     const p2 = kit.phone('stray-step1-text')
+    107|     await seedSession(kit, p2, { flow: 'invoice', step: 1, context: {}…
+    108|     expect(await miTurn(kit, p2, 'hello', kit.sid('stray-step1-text-t'…
+       |                                                                                          ^
+    109|   })
+    110| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 41 passed (42)
+   Start at  00:15:16
+   Duration  97.48s (transform 37ms, setup 0ms, collect 33ms, tests 97.33s, environment 0ms, prepare 18ms)
+
+[vitest exit 1]
+finished(UTC): 2026-11-13T18:46:54Z

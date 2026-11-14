@@ -40,9 +40,9 @@ import {
   MI_SESSION_ENDED_REPLY,
   CHECKIN_RESET_EXPLAIN_REPLY,
   MI_CHECKIN_PHOTO_NOT_SAVED_REPLY,
-  MI_ASK_KIND,
+  MI_ASK_FILE,
   MI_ACK_REASK,
-  MI_ACK_QUESTION_DC,
+  MI_ACK_QUESTION,
 } from '@/lib/whatsapp/flows/material-inward-strings'
 import {
   buildCaptureKit,
@@ -165,7 +165,7 @@ async function seedInvoice(phone: string, o: { updatedAt: Date; expiresAt: Date;
     flow: 'invoice',
     step: o.step ?? 3,
     // C4a: a valid uuid (was 'doc-x'). A live row now reaches apply_material_inward_turn, which casts mi_document_id to uuid.
-    context: { mi_kind: 'dc', mi_document_id: crypto.randomUUID(), mi_last_sid: 'sid-y', mi_reask: 0 },
+    context: { mi_document_id: crypto.randomUUID(), mi_last_sid: 'sid-y', mi_reask: 0 },
     updatedAt: o.updatedAt,
     expiresAt: o.expiresAt,
   })
@@ -415,18 +415,18 @@ describe('T-D1: D1(d) one-shot ended reply', () => {
         now: new Date('2026-08-20T00:05:00+05:30'),
       },
     ],
-  ])('T-D1-6 (%s) allowlisted phone: "4" after the session ended starts a new session at step 1, no ended reply', async (label, seed) => {
+  ])('T-D1-6 (%s) allowlisted phone: "4" after the session ended starts a new session at step 2 (the file step), no ended reply', async (label, seed) => {
     const phone = kit.phone(`d1-6-${label.slice(0, 3)}`)
     await withAllowlist(phone, async () => {
       await seedInvoice(phone, { updatedAt: seed.updatedAt, expiresAt: seed.expiresAt })
       const { client, calls } = spyClient()
       const r = await route(phone, '4', seed.now, client)
-      expect(r.reply).toBe(MI_ASK_KIND)
+      expect(r.reply).toBe(MI_ASK_FILE)
       expect(r.reply).not.toBe(MI_SESSION_ENDED_REPLY)
       expect(r.resolvedFlow).toBe('invoice')
       const s = await getSession(kit, phone)
       expect(s!.current_flow).toBe('invoice')
-      expect(s!.current_step).toBe(1)
+      expect(s!.current_step).toBe(2)
       const apply = calls.filter((c) => c.name === 'apply_material_inward_turn')
       expect(apply).toHaveLength(1)
       expect(apply[0]!.args.p_start_flow).toBe(true)
@@ -622,7 +622,7 @@ describe('live invoice / safety rows', () => {
     const { client, calls } = spyClient()
     const r = await route(phone, 'hello', NOON, client)
     // step 3, non-ack text, first miss: the one re-ask, then the same ack question
-    expect(r.reply).toBe(`${MI_ACK_REASK}\n${MI_ACK_QUESTION_DC}`)
+    expect(r.reply).toBe(`${MI_ACK_REASK}\n${MI_ACK_QUESTION}`)
     expect(r.resolvedFlow).toBe('invoice')
     expect(calls.filter((c) => c.name === 'apply_material_inward_turn')).toHaveLength(1)
     expect((await getSession(kit, phone))!.current_flow).toBe('invoice')
@@ -667,12 +667,12 @@ describe('AT-DARK: no engineer-visible change', () => {
     await withAllowlist(phone, async () => {
       const { client, calls } = spyClient()
       const r = await route(phone, '4', NOON, client)
-      expect(r.reply).toBe(MI_ASK_KIND)
+      expect(r.reply).toBe(MI_ASK_FILE)
       expect(r.reply).not.toBe(buildIdleReply('item_reserved', header(NOON)))
       expect(r.resolvedFlow).toBe('invoice')
       const s = await getSession(kit, phone)
       expect(s!.current_flow).toBe('invoice')
-      expect(s!.current_step).toBe(1)
+      expect(s!.current_step).toBe(2)
       expect(calls.filter((c) => c.name === 'apply_material_inward_turn')).toHaveLength(1)
     })
   })

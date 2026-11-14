@@ -1,0 +1,6 @@
+SELECT 'documents_total' AS k, count(*)::text AS v FROM public.capture_documents
+UNION ALL SELECT 'documents_kind=' || coalesce(kind,'NULL'), count(*)::text FROM public.capture_documents GROUP BY kind
+UNION ALL SELECT 'deliveries_total', count(*)::text FROM public.deliveries
+UNION ALL SELECT 'deliveries_status=' || status, count(*)::text FROM public.deliveries GROUP BY status
+UNION ALL SELECT 'links_total', count(*)::text FROM public.delivery_invoice_links
+ORDER BY 1;

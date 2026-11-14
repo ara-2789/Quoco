@@ -1,0 +1,2 @@
+SELECT count(*) FILTER (WHERE kind IS NULL) AS unclassified_all_tenants, count(*) AS documents,
+       (SELECT count(*) FROM public.whatsapp_sessions WHERE current_flow = 'invoice') AS invoice_flow_sessions FROM public.capture_documents;

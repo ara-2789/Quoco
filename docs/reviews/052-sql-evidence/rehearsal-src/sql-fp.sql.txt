@@ -1,0 +1,11 @@
+SELECT md5(concat_ws('|',
+  (SELECT coalesce(string_agg(pg_get_functiondef(p.oid), '' ORDER BY p.proname), '-') FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('apply_material_inward_turn','trg_capture_documents_before_insert','trg_capture_documents_before_update')),
+  (SELECT coalesce(string_agg(p.proname || ':' || coalesce(p.proacl::text,'-') || ':' || p.prosecdef::text || ':' || coalesce(p.proconfig::text,'-') || ':' || pg_get_userbyid(p.proowner), ',' ORDER BY n.nspname, p.proname), '-') FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE (n.nspname = 'public' AND p.proname IN ('apply_material_inward_turn','trg_capture_documents_before_insert','trg_capture_documents_before_update','pm_classify_document')) OR p.proname = 'capture_apply_classification'),
+  (SELECT coalesce(string_agg(pg_get_triggerdef(g.oid), ';' ORDER BY g.tgname), '-') FROM pg_trigger g WHERE g.tgrelid = 'public.capture_documents'::regclass AND NOT g.tgisinternal),
+  (SELECT coalesce(relacl::text,'-') FROM pg_class WHERE oid = 'public.capture_documents'::regclass),
+  (SELECT coalesce(string_agg(attname || ':' || attacl::text, ',' ORDER BY attname), '-') FROM pg_attribute WHERE attrelid = 'public.capture_documents'::regclass AND attacl IS NOT NULL),
+  (SELECT coalesce(string_agg(conname || ':' || pg_get_constraintdef(oid) || ':' || convalidated::text, ';' ORDER BY conname), '-') FROM pg_constraint WHERE conrelid = 'public.capture_documents'::regclass),
+  (SELECT coalesce(string_agg(attname || ':' || format_type(atttypid, atttypmod) || ':' || attnotnull::text || ':' || atthasdef::text, ',' ORDER BY attname), '-') FROM pg_attribute WHERE attrelid = 'public.capture_documents'::regclass AND attnum > 0 AND NOT attisdropped),
+  (SELECT coalesce(string_agg(nspname || ':' || coalesce(nspacl::text,'-'), ',' ORDER BY nspname), '-') FROM pg_namespace WHERE nspname IN ('private','public')),
+  (SELECT count(*)::text FROM pg_proc WHERE proname IN ('pm_classify_document','capture_apply_classification'))
+)) AS schema_fingerprint_052;

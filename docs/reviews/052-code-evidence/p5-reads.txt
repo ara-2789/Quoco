@@ -1,0 +1,15 @@
+P5 reads, 2026-11-13T18:40:25Z, HEAD 20bd085301b4a9b5d301788f5d8d7345e3f8fcae
+0cb3bc14afc70e3052d98c7dd75badc510019a4c3e2ae32a0fb9e52c0eeb83ed  docs/reviews/052-design/kind-removal-plan.md  (40874 bytes)
+4b23ac177fba1ec3510740160993042f30d697349145dc75ccdf3cbbf423574c  docs/reviews/052-design/052-tests-changing-meaning.txt  (23640 bytes)
+c1243b4be59ca6640a9338d9ed191b66b0e35d37e12e11a5109fea1b8514d49a  docs/reviews/052-design/052-design-review-round-3.md  (10633 bytes)
+9111eae1a0aed2567941451c01475f3b6e85cafad60c4d5ea6b64d603790bcee  docs/reviews/052-design/052-rev8-verification-pass.md  (4647 bytes)
+d6f38e7c6321d2f6dd9364037158c9ce17f850920c3111e2e5436802fe7ed915  docs/reviews/052-sql-review-round-1.md  (12770 bytes)
+db5cec6361a8127981adfb305375e695d94272ec08b69e232a223afc06e34f3d  docs/reviews/052-sql-review-package.md  (18892 bytes)
+988de4492e969ba5b100dc5dcbdb399e1931143a8d258b408a6b541ad171b2bf  docs/reviews/052-test-db-apply-record.md  (23672 bytes)
+a6f88c924b241925a9a16a8d3c251666f95e85641297a4d31c540d8e0e672f8b  CLAUDE.md  (89066 bytes)
+expected plan sha256: 0cb3bc14afc70e3052d98c7dd75badc510019a4c3e2ae32a0fb9e52c0eeb83ed
+CLAUDE.md section 0 / section 6 locations in this worktree copy:
+18:## 0. HOW WE WORK (read every time)
+886:## 6. CODING RULES
+1035:## 7. TESTING & VERIFICATION — how "done" is defined
+note: CLAUDE.md sections 0 and 6 were read as supplied in the session-start context (same text); the file sha256 above pins the worktree copy.

@@ -1,0 +1,11 @@
+#!/bin/bash
+# step 8: capture family (one process), pm-* family (one process), lint tests; raw run files to b2c
+cd <worktree>
+export VT_OUT=$HOME/quoco-records/052-build/b2c
+echo "######## capture family"
+LINES_MAX=60 bash $HOME/.claude/jobs/2a6b4d65/tmp/vt.sh step8-familyA-capture test/capture-*.test.ts test/unit/capture-*.test.ts test/unit/jobs-tick-dispatch.test.ts test/unit/material-inward-strings.test.ts test/unit/media-reply.test.ts test/unit/media-reply-capture.test.ts test/unit/section-42-unmatched-capture.test.ts | grep -E "^(timestamp|HEAD)|Test Files|Tests  |vitest exit|FAIL"
+echo "######## pm-* family"
+LINES_MAX=60 bash $HOME/.claude/jobs/2a6b4d65/tmp/vt.sh step8-familyC-pm test/pm-*.test.ts test/pm-*.test.tsx | grep -E "^(timestamp|HEAD)|Test Files|Tests  |vitest exit|FAIL"
+echo "######## lint tests"
+LINES_MAX=30 bash $HOME/.claude/jobs/2a6b4d65/tmp/vt.sh step8-familyB-lint test/unit/lint-migrations-rule10.test.ts test/unit/lint-no-auth-uid-as-users-id.test.ts | grep -E "^(timestamp|HEAD)|Test Files|Tests  |vitest exit|FAIL"
+echo "######## done"

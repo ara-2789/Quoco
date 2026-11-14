@@ -1,0 +1,88 @@
+timestamp(UTC): 2026-11-13T19:08:21Z
+HEAD: 99e594d5b66fe9bf9ef72db074fe7f0ea8c4fd70
+git status --porcelain: [ M test/capture-checkin-n2-n13.test.ts; M test/capture-engineer-flow.test.ts; M test/capture-handler.test.ts; M test/capture-ingest.test.ts; M test/capture-pm-functions.test.ts; M test/capture-races.test.ts; M test/capture-router.test.ts; M test/capture-webhook.test.ts; M test/helpers/capture-fixtures.ts; M test/unit/capture-fixtures-clock.test.ts;?? test/capture-teardown-leak.test.ts;]
+project ref (SUPABASE_TEST_PROJECT_REF of .env.test): exfccwlrhoutkgrlikod  (the vitest guard aborts unless it is exfccwlrhoutkgrlikod)
+command: npx vitest run test/capture-pm-functions.test.ts
+
+ RUN  v3.2.7 <worktree>
+
+ ✓ test/capture-pm-functions.test.ts (74 tests | 1 skipped) 188360ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_set_delivery_details: pm2 is refused QE015 and the rows are unchanged  1940ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_set_delivery_details: pmB is refused QE015 and the rows are unchanged  1844ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_set_delivery_details: qs is refused QE015 and the rows are unchanged  1667ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_set_delivery_details: deact is refused QE015 and the rows are unchanged  1687ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_set_delivery_details: pend is refused QE015 and the rows are unchanged  1765ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_set_delivery_details: admNon is refused QE015 and the rows are unchanged  1739ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_set_delivery_details: anon is refused 42501 (a real anon-key call) and service_role is refused 42501  468ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_approve_delivery: pm2 is refused QE015 and the rows are unchanged  1377ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_approve_delivery: pmB is refused QE015 and the rows are unchanged  1331ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_approve_delivery: qs is refused QE015 and the rows are unchanged  1262ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_approve_delivery: deact is refused QE015 and the rows are unchanged  1295ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_approve_delivery: pend is refused QE015 and the rows are unchanged  1314ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_approve_delivery: admNon is refused QE015 and the rows are unchanged  1379ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_approve_delivery: anon is refused 42501 (a real anon-key call) and service_role is refused 42501  650ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_reject_delivery: pm2 is refused QE015 and the rows are unchanged  1471ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_reject_delivery: pmB is refused QE015 and the rows are unchanged  1312ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_reject_delivery: qs is refused QE015 and the rows are unchanged  1414ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_reject_delivery: deact is refused QE015 and the rows are unchanged  1424ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_reject_delivery: pend is refused QE015 and the rows are unchanged  1279ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_reject_delivery: admNon is refused QE015 and the rows are unchanged  1258ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_reject_delivery: anon is refused 42501 (a real anon-key call) and service_role is refused 42501  510ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_link_invoice: pm2 is refused QE015 and the rows are unchanged  1328ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_link_invoice: pmB is refused QE015 and the rows are unchanged  1246ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_link_invoice: qs is refused QE015 and the rows are unchanged  1420ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_link_invoice: deact is refused QE015 and the rows are unchanged  1356ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_link_invoice: pend is refused QE015 and the rows are unchanged  1276ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_link_invoice: admNon is refused QE015 and the rows are unchanged  1331ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_link_invoice: anon is refused 42501 (a real anon-key call) and service_role is refused 42501  513ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_unlink_invoice: pm2 is refused QE015 and the rows are unchanged  1432ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_unlink_invoice: pmB is refused QE015 and the rows are unchanged  1357ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_unlink_invoice: qs is refused QE015 and the rows are unchanged  1439ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_unlink_invoice: deact is refused QE015 and the rows are unchanged  1505ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_unlink_invoice: pend is refused QE015 and the rows are unchanged  1367ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_unlink_invoice: admNon is refused QE015 and the rows are unchanged  1194ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > pm_unlink_invoice: anon is refused 42501 (a real anon-key call) and service_role is refused 42501  511ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > T-F5-SAME the refusal is IDENTICAL for a nonexistent id, an id in another tenant and an id in another project  1332ms
+   ✓ T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions is QE015 > B2 positive controls: a PM member and an admin who is also a PM member both succeed  2511ms
+   ✓ T-S1 array shape and ownership of pm_link_invoice: QE015 for the whole call, nothing locked or written > T-S1-FOREIGN-ID a delivery of another project is QE015, NOT an FK 23503  760ms
+   ✓ T-S1 array shape and ownership of pm_link_invoice: QE015 for the whole call, nothing locked or written > T-S1-FOREIGN-ID a delivery of another tenant is QE015, NOT an FK 23503  807ms
+   ✓ T-S1 array shape and ownership of pm_link_invoice: QE015 for the whole call, nothing locked or written > T-S1-FOREIGN-ID one good id plus one foreign id: the whole call is refused, the good id is not linked  1045ms
+   ✓ T-S1 array shape and ownership of pm_link_invoice: QE015 for the whole call, nothing locked or written > T-S1-ARRAY-SHAPE an empty array -> QE015, nothing cancelled  757ms
+   ✓ T-S1 array shape and ownership of pm_link_invoice: QE015 for the whole call, nothing locked or written > T-S1-ARRAY-SHAPE a NULL element -> QE015, nothing cancelled  863ms
+   ✓ T-S1 array shape and ownership of pm_link_invoice: QE015 for the whole call, nothing locked or written > T-S1-ARRAY-SHAPE a duplicate id -> QE015, nothing cancelled  785ms
+   ✓ T-S1 array shape and ownership of pm_link_invoice: QE015 for the whole call, nothing locked or written > T-S1-ARRAY-SHAPE 21 ids (cap 20) -> QE015, nothing cancelled  922ms
+   ✓ T-S1 array shape and ownership of pm_link_invoice: QE015 for the whole call, nothing locked or written > T-S1-ARRAY-SHAPE a NULL array and a nonexistent invoice -> QE015  1432ms
+   ✓ T-S1 array shape and ownership of pm_link_invoice: QE015 for the whole call, nothing locked or written > T-S1-UNLINK a nonexistent link id, another project's link and another tenant's link give the identical QE015  2117ms
+   ✓ pm_link_invoice / pm_unlink_invoice behaviour (T-A28-2/4/5, T-LINK-1, E8) > T-A28-2 link to two DC deliveries: two pm_manual rows, the automatic delivery cancelled (superseded_by_link) in the same call, self-link soft-unlinked with the snapshot  5999ms
+   ✓ pm_link_invoice / pm_unlink_invoice behaviour (T-A28-2/4/5, T-LINK-1, E8) > E8 -> QE008 (049 package section 10 item 2) and T-A28-2 control: a second invoice linking an already-linked DC fails QE008 and cancels NOTHING  5378ms
+   ✓ pm_link_invoice / pm_unlink_invoice behaviour (T-A28-2/4/5, T-LINK-1, E8) > T-A28-5 (X6/D-9) linking an invoice whose automatic delivery is APPROVED is refused (QE011) and nothing changes  4061ms
+   ✓ pm_link_invoice / pm_unlink_invoice behaviour (T-A28-2/4/5, T-LINK-1, E8) > T-A28-4 unlink: another PM link remains -> nothing restored; the LAST PM link goes -> automatic delivery restored with a NEW self-link; a rejected one is not restored  11294ms
+   ✓ pm_link_invoice / pm_unlink_invoice behaviour (T-A28-2/4/5, T-LINK-1, E8) > a PM cannot unlink an automatic self-link (QE010)  1943ms
+   ✓ pm_link_invoice / pm_unlink_invoice behaviour (T-A28-2/4/5, T-LINK-1, E8) > T-LINK-1 refusals by the 049 triggers through the function: internal transfer (QE003), automatic delivery (QE004), rejected delivery (QE005)  7610ms
+   ✓ pm_link_invoice / pm_unlink_invoice behaviour (T-A28-2/4/5, T-LINK-1, E8) > T-Q3-1 retype to internal transfer with an active link is refused (QE006); an AUTOMATIC delivery can never be retyped (QE007)  6009ms
+   ✓ pm_approve_delivery / pm_reject_delivery (D-10, QE011/QE016/QE017, Path 3 and Path 4, Q-2 probe 4) > T-D10-APPROVE-INCOMPLETE the right PM approves an incomplete delivery: approved, approved_by and approved_at stamped  2227ms
+   ✓ pm_approve_delivery / pm_reject_delivery (D-10, QE011/QE016/QE017, Path 3 and Path 4, Q-2 probe 4) > QE016: approving a delivery with no type set; QE011: approving a rejected / already approved delivery  6136ms
+   ✓ pm_approve_delivery / pm_reject_delivery (D-10, QE011/QE016/QE017, Path 3 and Path 4, Q-2 probe 4) > QE017: a blank rejection reason (blank, whitespace, NULL)  2594ms
+   ✓ pm_approve_delivery / pm_reject_delivery (D-10, QE011/QE016/QE017, Path 3 and Path 4, Q-2 probe 4) > Path 3: rejecting an AUTOMATIC delivery soft-unlinks its self-link as delivery_rejected  2052ms
+   ✓ pm_approve_delivery / pm_reject_delivery (D-10, QE011/QE016/QE017, Path 3 and Path 4, Q-2 probe 4) > Path 4: rejecting the only linked DC delivery rejects it AND restores the automatic delivery with a new self-link; Q-2 probe 4 is 0  5995ms
+   ✓ pm_approve_delivery / pm_reject_delivery (D-10, QE011/QE016/QE017, Path 3 and Path 4, Q-2 probe 4) > Q-2 probe 4 after every path above: links unlinked as delivery_rejected whose delivery is not rejected = 0  1117ms
+   ✓ B1 (review r1): the ack is ALWAYS stored; the delivery moves to awaiting_pm only WHERE status = incomplete > T-B1-APPROVE-THEN-ACK ack stored, delivery stays approved, no error (an unconditional move would raise QE011 and lose the ack)  2846ms
+   ✓ B1 (review r1): the ack is ALWAYS stored; the delivery moves to awaiting_pm only WHERE status = incomplete > T-B1-REJECT-THEN-ACK ack stored, delivery stays rejected  2944ms
+   ✓ B1 (review r1): the ack is ALWAYS stored; the delivery moves to awaiting_pm only WHERE status = incomplete > T-B1-LINK-THEN-ACK ack stored; the cancelled automatic delivery STAYS cancelled with cancelled_at / cancel_reason still set; the PM links stay active  4502ms
+   ✓ B1 (review r1): the ack is ALWAYS stored; the delivery moves to awaiting_pm only WHERE status = incomplete > B1 contrast: an ack on a still-incomplete delivery moves it to awaiting_pm  2354ms
+   ✓ vitest c, d, f (049 package line 267): the test-only helpers, and their guards > c. helper insert: quoco_test_capture_insert inserts an unclassified capture_documents row for a fixture tenant and the 049/052 triggers still fire  799ms
+   ✓ vitest c, d, f (049 package line 267): the test-only helpers, and their guards > d. tenant guard: the helper refuses a tenant that is not a zz-test-capture-* fixture tenant (insert, update and cleanup)  1013ms
+   ✓ vitest c, d, f (049 package line 267): the test-only helpers, and their guards > f. N-4 E12 via the helper: a delivery INSERT that is not "incomplete" / carries PM fields is refused QE012  1129ms
+   ✓ T-A28-3 / T-Q3-1 / T-LINK-1 with the PR-B functions BYPASSED (quoco_test_capture_* helpers; the 049 triggers still fire) > T-A28-3 a pm_manual link while the invoice has an active self-link is refused QE001; a self-link while a pm_manual link is active is refused QE002; with the self-link first soft-unlinked the pm_manual insert succeeds  4179ms
+   ✓ T-A28-3 / T-Q3-1 / T-LINK-1 with the PR-B functions BYPASSED (quoco_test_capture_* helpers; the 049 triggers still fire) > T-A28-3 a SECOND active self-link for one invoice is refused (unique index), even with the function bypassed  1611ms
+   ✓ T-A28-3 / T-Q3-1 / T-LINK-1 with the PR-B functions BYPASSED (quoco_test_capture_* helpers; the 049 triggers still fire) > T-Q3-1 / T-LINK-1 with the function bypassed: retype to internal transfer with an active link is refused QE006; a link to a delivery of another project is refused by the composite FK  6150ms
+   ✓ SQL review r1 N-3 / N-4 > N-3 pm_set_delivery_details on a REJECTED delivery is refused QE011 and the content is unchanged  3878ms
+   ✓ SQL review r1 N-3 / N-4 > N-4 reject_reason is capped at 1000 characters: 1001 -> QE017 (nothing changes), 1000 is accepted  2388ms
+
+ Test Files  1 passed (1)
+      Tests  73 passed | 1 skipped (74)
+   Start at  00:38:21
+   Duration  188.52s (transform 37ms, setup 0ms, collect 35ms, tests 188.36s, environment 0ms, prepare 18ms)
+
+[vitest exit 0]
+finished(UTC): 2026-11-13T19:11:30Z

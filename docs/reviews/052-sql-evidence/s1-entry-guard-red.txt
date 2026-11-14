@@ -1,0 +1,26 @@
+S-1 RED: entry guard unfixed, symlink test added
+HEAD b205e56a660f4123909b1b1778eae1dddbf3a89a
+git status --porcelain (excluding node_modules): [ M test/unit/lint-migrations-rule10.test.ts;]
+node v26.5.0
+b7ee67e636f80c87df3dde0cfbc90b83b7ccd19c36119d02bf4821368f72d005  scripts/lint-migrations.mjs
+8449d73ec038ab84a7328113907d837300087fd8354e8ac6841a81c639d98a94  test/unit/lint-migrations-rule10.test.ts
+-- direct reproduction: run the script through a symlinked directory
+exit=0
+output bytes:        0
+-- test file (config without global setup, no env file, no database)
+   ✓ extractDefinedFunctionNames (schema-aware keys) > keys unqualified and public. forms identically, as public.<name> 1ms
+   ✓ extractDefinedFunctionNames (schema-aware keys) > keys another schema as schema.name 0ms
+   ✓ extractDefinedFunctionNames (schema-aware keys) > is case-insensitive 0ms
+   ✓ Rule 10 — function-redefinition-requires-capture, schema-aware > a first definition in private is never a violation 0ms
+   ✓ Rule 10 — function-redefinition-requires-capture, schema-aware > RED: a later redefinition of a private function with no baseline line is flagged, schema-qualified key (S-B) 0ms
+   ✓ Rule 10 — function-redefinition-requires-capture, schema-aware > RED: a public redefinition keeps the BARE-name key, so existing exemptions keep matching (S-D) 0ms
+   ✓ Rule 10 — function-redefinition-requires-capture, schema-aware > multiple redefined names join with a comma, public bare and other schemas qualified 0ms
+   ✓ Rule 10 — function-redefinition-requires-capture, schema-aware > GREEN: a redefinition carrying its body_md5 line and the capture command is clean 0ms
+   ✓ Rule 10 — function-redefinition-requires-capture, schema-aware > the same bare name in two schemas are two functions: private.h does not make public.h a redefinition 0ms
+   ✓ Rule 10 — function-redefinition-requires-capture, schema-aware > a baseline line without the capture command still flags 0ms
+   × lint-migrations entry guard (SQL review round 1, S-1) > runs main() when invoked through a symlinked directory (a gate must never be green without running) 27ms
+   ✓ lint-migrations wiring > running the script directly runs main() (importing it above did not), and Rule 10 flags nothing on the real tree 70ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/unit/lint-migrations-rule10.test.ts > lint-migrations entry guard (SQL review round 1, S-1) > runs main() when invoked through a symlinked directory (a gate must never be green without running)
+ Test Files  1 failed (1)
+      Tests  1 failed | 11 passed (12)

@@ -1,0 +1,4 @@
+#!/bin/bash
+. $HOME/.claude/jobs/2a6b4d65/tmp/lib.sh
+{ hdr; Q "C3 leftover zz-test-capture tenants: what they still hold" $T/sql/C3.sql; } > $OUT/stepC3-leftover-tenants.txt 2>&1
+grep -E '"(tenant_slug|documents|sessions|users)"|exit' $OUT/stepC3-leftover-tenants.txt

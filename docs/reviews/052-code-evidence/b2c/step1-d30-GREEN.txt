@@ -1,0 +1,40 @@
+timestamp(UTC): 2026-11-14T02:01:37Z
+HEAD: 39289b29c973c425080a853286e1439d6195820e
+git status --porcelain: [ M test/helpers/pm-fixtures.ts;]
+project ref (SUPABASE_TEST_PROJECT_REF of .env.test): exfccwlrhoutkgrlikod  (the vitest guard aborts unless it is exfccwlrhoutkgrlikod)
+command: npx vitest run test/pm-d30-shapes.test.tsx
+
+ RUN  v3.2.7 <worktree>
+
+stdout | test/pm-d30-shapes.test.tsx
+[pm-d30-shapes] buildPmKit: 9105 ms
+
+stdout | test/pm-d30-shapes.test.tsx
+[pm-d30-shapes] makeD30Shapes (dc 2 files + invoice 3 files, stored and acked): 9627 ms
+
+stdout | test/pm-d30-shapes.test.tsx
+[pm-d30-shapes] removeStoredObjects: 442 ms
+
+stdout | test/pm-d30-shapes.test.tsx
+[pm-d30-shapes] teardownCaptureKit: 4999 ms
+
+ ✓ test/pm-d30-shapes.test.tsx (11 tests) 47545ms
+   ✓ the fixtures really have the D-30 shape (service-role read-back) > DC: two stored files, the caption is the WhatsApp file name, awaiting_pm  788ms
+   ✓ the fixtures really have the D-30 shape (service-role read-back) > invoice: three stored files, caption is a file name, awaiting_pm automatic delivery with exactly ONE active self-link  1028ms
+   ✓ the PM page data layer on those shapes > detail of the multi-file DC: both files are listed as stored  2097ms
+   ✓ the PM page data layer on those shapes > detail of the invoice: three stored files, created from the invoice, its self-link is the only active link  1929ms
+   ✓ the PM page data layer on those shapes > the list shows both in the open group, and neither the list nor either detail carries the caption  4365ms
+   ✓ rendering the REAL detail objects of those shapes > the multi-file DC page: one plain link per stored file to /api/capture-files/<id>, no caption, nothing signed  1666ms
+   ✓ rendering the REAL detail objects of those shapes > the invoice page: three file links, the invoice ack label (never a DC one), no caption  2276ms
+   ✓ rendering the REAL detail objects of those shapes > the invoice page: every picker candidate row (a DC delivery) renders its DC ack label  1900ms
+   ✓ rendering the REAL detail objects of those shapes > the DC page: its own ack never renders an invoice label  1719ms
+   ✓ the file route on a multi-file document > EVERY stored file of the document opens for the owning PM (302), not only the first  4279ms
+   ✓ the file route on a multi-file document > a PM of another project is refused for the second file with the identical 404  1316ms
+
+ Test Files  1 passed (1)
+      Tests  11 passed (11)
+   Start at  07:31:38
+   Duration  48.00s (transform 79ms, setup 0ms, collect 305ms, tests 47.54s, environment 0ms, prepare 22ms)
+
+[vitest exit 0]
+finished(UTC): 2026-11-14T02:02:26Z

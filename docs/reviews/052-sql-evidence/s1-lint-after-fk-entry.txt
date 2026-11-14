@@ -1,0 +1,3 @@
+> node scripts/lint-migrations.mjs
+
+migration-lint: clean. 107 known violation(s), all exempted.

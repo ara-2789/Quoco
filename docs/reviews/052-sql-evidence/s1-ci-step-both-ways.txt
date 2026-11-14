@@ -1,0 +1,28 @@
+HEAD b205e56a660f4123909b1b1778eae1dddbf3a89a  ci.yml sha256 2d5f32e6220867a358afc8c3dd31c4bd981c365284461e79035921110fa5bf5d
+---- extracted step script:
+set +e
+npm run lint:migrations 2>&1 | tee lint-migrations.out
+status=${PIPESTATUS[0]}
+if ! grep -Eq '^migration-lint:' lint-migrations.out; then
+  echo "::error::lint:migrations printed no 'migration-lint:' verdict line, so it did not run"
+  exit 1
+fi
+exit $status
+
+==== A. normal run (real repo)
+
+> quocoai@0.1.0 lint:migrations
+> node scripts/lint-migrations.mjs
+
+migration-lint: clean. 107 known violation(s), all exempted.
+step exit=0
+
+==== B. scratch copy with main() unreachable (lint script runs, prints nothing, exits 0)
+scratch lint sha256 06547e788e65343ed1c2615ed0e9e09b43fe44c528f5912567ae084c0f734391; diff lines vs real: 2
+(bare script: exit=0, no output, i.e. the old failure mode)
+
+> lint:migrations
+> node scripts/lint-migrations.mjs
+
+::error::lint:migrations printed no 'migration-lint:' verdict line, so it did not run
+step exit=1

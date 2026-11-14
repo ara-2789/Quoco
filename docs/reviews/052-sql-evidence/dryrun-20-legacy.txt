@@ -1,0 +1,85 @@
+== legacy: seed PRE-052
+== LEGACY seed (pre-052): one DC with its delivery, one invoice with automatic delivery and self-link
+             dc_delivery              
+--------------------------------------
+ 60000000-0000-0000-0000-000000000001
+(1 row)
+
+               inv_doc                
+--------------------------------------
+ 50000000-0000-0000-0000-000000000002
+(1 row)
+
+                ?column?                 
+-----------------------------------------
+ legacy documents=2 deliveries=2 links=1
+(1 row)
+
+== apply 052 over legacy rows
+apply exit=0
+== checks
+== LEGACY post-apply checks
+                                                ok                                                 
+---------------------------------------------------------------------------------------------------
+ PASS: both legacy documents are kind_source engineer_declared with NULL kind_set_at / kind_set_by
+(1 row)
+
+                                         ok                                          
+-------------------------------------------------------------------------------------
+ PASS: each document received_at equals its own delivery received_at (lossless copy)
+(1 row)
+
+                   ok                    
+-----------------------------------------
+ PASS: received_at <= created_at on both
+(1 row)
+
+                                                                                                          r                                                                                                           
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ classify legacy DC, same kind      OK {"kind": "dc", "delivery_id": "60000000-0000-0000-0000-000000000001", "document_id": "50000000-0000-0000-0000-000000000001", "self_link_id": null, "already_classified": true}
+(1 row)
+
+                                                                                                                              r                                                                                                                              
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ classify legacy invoice, same kind OK {"kind": "invoice", "delivery_id": "60000000-0000-0000-0000-000000000002", "document_id": "50000000-0000-0000-0000-000000000002", "self_link_id": "70000000-0000-0000-0000-000000000001", "already_classified": true}
+(1 row)
+
+                        r                         
+--------------------------------------------------
+ classify legacy DC, other kind     ERR QE011 E11
+(1 row)
+
+                                                 ok                                                  
+-----------------------------------------------------------------------------------------------------
+ PASS: legacy classify wrote nothing: still 2 documents, 2 deliveries, 1 link, kind_source unchanged
+(1 row)
+
+                        r                        
+-------------------------------------------------
+ owner UPDATE kind on a legacy row  ERR QE009 E9
+(1 row)
+
+                        r                        
+-------------------------------------------------
+ owner UPDATE kind_source to pm     ERR QE009 E9
+(1 row)
+
+ md5 apply_material_inward_turn 6046b03c7849f3755918264fdd1bbc09
+ md5 trg_capture_documents_before_insert 4f83a28f16956ebae830361c4f898899
+ md5 trg_capture_documents_before_update cfcd59258a5039acc395dd8136328ca5
+
+ 052 objects: schema_private=true wrapper=true helper=true new_columns=4 constraints=4 kind_not_null=false ledger_052=false
+
+ rows: documents=2 deliveries=2 links=1 sessions_invoice=0
+
+== DOWN over the legacy (all classified) database
+down exit=0
+ md5 apply_material_inward_turn cecc170b26208d4b820402879e020271
+ md5 trg_capture_documents_before_insert b5467b20392b7e26449602acb9da2d00
+ md5 trg_capture_documents_before_update 4a7f470362e0bc7b7687737860d112f4
+
+ 052 objects: schema_private=false wrapper=false helper=false new_columns=0 constraints=0 kind_not_null=true ledger_052=false
+
+ rows: documents=2 deliveries=2 links=1 sessions_invoice=0
+
+legacy rows intact after DOWN: docs=2 deliveries=2 links=1

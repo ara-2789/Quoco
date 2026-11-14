@@ -15,7 +15,9 @@ const istDate = (d: Date): string => new Date(d.getTime() + IST_OFFSET_MS).toISO
 
 type RpcParams = Record<string, unknown>
 
-function fakeKit(calls: RpcParams[], onRpc: () => void): Fixtures.CaptureKit {
+// 052: makeDoc is start -> file -> classify as the PM. The first two are svc.rpc('apply_material_inward_turn') calls that carry
+// p_now; the classification is a call on the PM's own client (kit.jwt), has no clock parameter, and is recorded in `classified`.
+function fakeKit(calls: RpcParams[], onRpc: () => void, classified: RpcParams[] = []): Fixtures.CaptureKit {
   const kit = {
     svc: {
       from: () => ({ insert: async () => ({ error: null }) }),
@@ -23,11 +25,17 @@ function fakeKit(calls: RpcParams[], onRpc: () => void): Fixtures.CaptureKit {
         calls.push(params)
         onRpc()
         return {
-          data: { outcome: 'advance', current_flow: 'invoice', current_step: 3, document_id: 'doc-1', delivery_id: 'del-1' },
+          data: { outcome: 'advance', current_flow: 'invoice', current_step: 3, document_id: 'doc-1', delivery_id: null },
           error: null,
         }
       },
     },
+    jwt: async () => ({
+      rpc: async (_name: string, params: RpcParams) => {
+        classified.push(params)
+        return { data: { document_id: 'doc-1', kind: params.p_kind, delivery_id: 'del-1', self_link_id: null, already_classified: false }, error: null }
+      },
+    }),
     tenantA: 'tenant-a',
     p1: 'project-1',
     uid: () => 'user-1',
@@ -54,15 +62,22 @@ describe('capture fixtures: fixed noon p_now (T-CLK)', () => {
     vi.setSystemTime(new Date('2026-10-25T18:29:58Z'))
     const { makeDoc } = await loadFixtures()
     const calls: RpcParams[] = []
+    const classified: RpcParams[] = []
     let first = true
-    const kit = fakeKit(calls, () => {
-      if (first) {
-        first = false
-        vi.setSystemTime(new Date('2026-10-25T18:30:02Z')) // IST midnight passes between the calls
-      }
-    })
+    const kit = fakeKit(
+      calls,
+      () => {
+        if (first) {
+          first = false
+          vi.setSystemTime(new Date('2026-10-25T18:30:02Z')) // IST midnight passes between the calls
+        }
+      },
+      classified,
+    )
     await makeDoc(kit, 'dc', 'clk1')
-    expect(calls).toHaveLength(3)
+    // 052: two engineer turns (start, file; the kind turn is gone) carry p_now; the classification is one more call with no clock
+    expect(calls).toHaveLength(2)
+    expect(classified).toEqual([{ p_document_id: 'doc-1', p_kind: 'dc' }])
     for (const c of calls) expect(c.p_now, 'every call carries p_now').toBeTypeOf('string')
     const values = calls.map((c) => c.p_now as string)
     expect(new Set(values).size).toBe(1)

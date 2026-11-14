@@ -1,0 +1,11 @@
+HEAD f007f61dc900b0d6c3ba997c5c93c628fb7f6c93
+status: []
+b41b66654e6f52e2ecf0071f925aa1850de5e3a27ad4f5002005638f7658e847  scripts/lint-migrations.mjs
+d7c8303252604781db8309296492601d9c367fd390225ff6ff723ac277a64d2b  scripts/migration-lint-exceptions.json
+--- npm run lint:migrations (baseline, untouched tree)
+
+> quocoai@0.1.0 lint:migrations
+> node scripts/lint-migrations.mjs
+
+migration-lint: clean. 107 known violation(s), all exempted.
+exit=0

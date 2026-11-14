@@ -1,0 +1,72 @@
+timestamp(UTC): 2026-11-13T18:51:48Z
+HEAD: 99e594d5b66fe9bf9ef72db074fe7f0ea8c4fd70
+git status --porcelain: [ M test/capture-checkin-n2-n13.test.ts; M test/capture-engineer-flow.test.ts; M test/capture-handler.test.ts; M test/capture-ingest.test.ts; M test/capture-races.test.ts; M test/capture-router.test.ts; M test/capture-webhook.test.ts; M test/helpers/capture-fixtures.ts; M test/unit/capture-fixtures-clock.test.ts;?? test/capture-teardown-leak.test.ts;]
+project ref (SUPABASE_TEST_PROJECT_REF of .env.test): exfccwlrhoutkgrlikod  (the vitest guard aborts unless it is exfccwlrhoutkgrlikod)
+command: npx vitest run test/capture-handler.test.ts
+
+ RUN  v3.2.7 <worktree>
+
+ ❯ test/capture-handler.test.ts (28 tests | 1 failed) 58463ms
+   ✓ T-STR: approved strings, byte for byte > T-STR-1 every approved constant equals plan section 7 exactly (15 kept byte-identical; the 2 new 052 texts pinned, NOT approved) 2ms
+   ✓ T-STR: approved strings, byte for byte > T-STR-2 the module exports exactly the approved MI_* / CHECKIN_* names (17 rows: 21 minus 6 retired plus 2 new, 052) and nothing else 2ms
+   ✓ T-STR: approved strings, byte for byte > menu: buildIdleMenu / buildIdleReply never contain MI_MENU_LINE (the idle menu is untouched until C6) 23ms
+   ✓ outcome map (real RPC, real router) > conversation: file re-ask, 2 photos, 1 more photo, ack re-ask, unclear close (052: no kind turn)  8823ms
+   ✓ outcome map (real RPC, real router) > conversation: one photo, ack 2 -> "what is wrong", a photo at the note step, the note -> done (052: the same neutral question for any document)  6345ms
+   ✓ outcome map (real RPC, real router) > ack 3 -> "what is missing", note -> done; ack 1 -> done  7445ms
+   ✓ outcome map (real RPC, real router) > two misses at the file step close the flow with nothing recorded (052: step 1 is retired)  3585ms
+   ✓ outcome map (real RPC, real router) > a replayed SID is a no-op: empty reply, no second reply  2494ms
+   ✓ outcome map (real RPC, real router) > files present but none usable: MI_UNSUPPORTED_FILE_REPLY, the RPC is not called  1295ms
+   ✓ outcome map (real RPC, real router) > wrong_flow (a check-in took over between the router and the RPC): explanation + the current check-in question  2458ms
+   ✓ outcome map (real RPC, real router) > wrong_flow with a current_flow that is not morning/evening throws, with no phone or id in the text, and is not an S-F event  1328ms
+   ✓ S-F-1: record and alert on a failed file turn > T-SF-1 a failing RPC on a photo: MI_CAPTURE_FAILED_REPLY, one counts-only Sentry error, no phone/URL/body/ids anywhere  1682ms
+   ✓ S-F-1: record and alert on a failed file turn > T-SF-1b errorCode is error.code only when it is exactly five upper-case letters/digits, else "unknown"  4624ms
+   × S-F-1: record and alert on a failed file turn > T-SF-1c a failing post-RPC read (after the RPC committed) is inside the same catch 1789ms
+     → expected '✅ 1 file received.\nDoes the material…' to be 'Sorry, I couldn\'t receive that file.…' // Object.is equality
+   ✓ S-F-1: record and alert on a failed file turn > T-SF-1d a failing RPC on a TEXT turn propagates (Q6b): no S-F event, and the thrown text carries no phone, ids or provider message  1430ms
+   ✓ S-F-1: record and alert on a failed file turn > T-SF-2 ordering: the webhook consumes the SID before routing, and the RPC still refuses a file turn with no SID row (QE012)  1222ms
+   ✓ S-F-1: record and alert on a failed file turn > T-SF-3 a QE012 refusal on a photo through the router is an S-F event and the failure reply, not a swallowed network error  3326ms
+   ✓ T-A27-6: the RPC says expired / idle after the router read the row as live > T-A27-6a 'expired': ended reply, row cleared by the RPC, counts-only event for a photo, the next message takes the idle path  2313ms
+   ✓ T-A27-6: the RPC says expired / idle after the router read the row as live > T-A27-6b 'idle' from a day-stale reset: the handler clears the row with p_now = max(now, expires_at), then the ended reply, once  2295ms
+   ✓ T-NOWRITE-1: no direct from('capture_files') write outside C5 > (a) the WRITER set is exactly the C5 handler and the tick route; every other file under lib/ and app/ that mentions capture_files is a named READER 15ms
+   ✓ T-NOWRITE-1: no direct from('capture_files') write outside C5 > (a2) every READERS entry still mentions capture_files and carries a reason (a stale entry fails) 9ms
+   ✓ T-NOWRITE-1: no direct from('capture_files') write outside C5 > (e) READERS: EVERY occurrence of the string is the argument of from(...) and its chain is select-only (comments are NOT exempt) 2ms
+   ✓ T-NOWRITE-1: no direct from('capture_files') write outside C5 > (e2) READERS call .rpc( only for a function on the named RPC_ALLOW list (empty today) 0ms
+   ✓ T-NOWRITE-1: no direct from('capture_files') write outside C5 > (e3) the chain scanner itself: it ends a statement where it should, and sees a write that hides after a comment line 0ms
+   ✓ T-NOWRITE-1: no direct from('capture_files') write outside C5 > (b) the C5 handler never inserts, upserts or deletes on any table 0ms
+   ✓ T-NOWRITE-1: no direct from('capture_files') write outside C5 > (c) capture_files appears exactly once in the tick route, inside the event extra 0ms
+   ✓ T-NOWRITE-1: no direct from('capture_files') write outside C5 > (c) CONTROL: a tick route with a second mention fails the same check (a comment, a string, a query) 0ms
+   ✓ T-NOWRITE-1: no direct from('capture_files') write outside C5 > control: the scanner does find a file that mentions it (this test file) 9ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/capture-handler.test.ts > S-F-1: record and alert on a failed file turn > T-SF-1c a failing post-RPC read (after the RPC committed) is inside the same catch
+AssertionError: expected '✅ 1 file received.\nDoes the material…' to be 'Sorry, I couldn\'t receive that file.…' // Object.is equality
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- Sorry, I couldn't receive that file. Please send it again.[39m
+[31m+ ✅ 1 file received.[39m
+[31m+ Does the material at site match this document?[39m
+[31m+ Reply 1 for matches[39m
+[31m+ Reply 2 for does not match[39m
+[31m+ Reply 3 for partly matches[39m
+
+ ❯ test/capture-handler.test.ts:405:21
+    403|     const docs0 = await docCount()
+    404|     const r = await say(phone, '', client, 1)
+    405|     expect(r.reply).toBe(strings.MI_CAPTURE_FAILED_REPLY)
+       |                     ^
+    406|     expect(await docCount()).toBe(docs0 + 1) // the RPC had committed:…
+    407|     const [, opts] = captureMessage.mock.calls[0] as [string, { extra:…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 27 passed (28)
+   Start at  00:21:49
+   Duration  58.69s (transform 90ms, setup 0ms, collect 110ms, tests 58.46s, environment 0ms, prepare 18ms)
+
+[vitest exit 1]
+finished(UTC): 2026-11-13T18:52:47Z

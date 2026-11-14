@@ -1,0 +1,23 @@
+-- read-only lock monitor: samples pg_locks every 100 ms for an EXCLUSIVE lock on public.whatsapp_sessions held by another backend.
+DO $$
+DECLARE
+  t_start timestamptz := clock_timestamp();
+  t_end   timestamptz := clock_timestamp() + interval '45 seconds';
+  first_seen timestamptz; last_seen timestamptz; samples int := 0; hits int := 0; hit boolean;
+BEGIN
+  WHILE clock_timestamp() < t_end LOOP
+    samples := samples + 1;
+    SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'relation' AND relation = 'public.whatsapp_sessions'::regclass
+                    AND mode = 'ExclusiveLock' AND granted AND pid <> pg_backend_pid()) INTO hit;
+    IF hit THEN
+      hits := hits + 1;
+      IF first_seen IS NULL THEN first_seen := clock_timestamp(); END IF;
+      last_seen := clock_timestamp();
+    END IF;
+    PERFORM pg_sleep(0.1);
+  END LOOP;
+  RAISE EXCEPTION 'MONITOR_RESULT started=% ended=% samples=% hits=% first_seen=% last_seen=% seen_span_ms=%',
+    t_start, clock_timestamp(), samples, hits, first_seen, last_seen,
+    CASE WHEN first_seen IS NULL THEN NULL ELSE round(extract(epoch FROM (last_seen - first_seen)) * 1000) END;
+END;
+$$;

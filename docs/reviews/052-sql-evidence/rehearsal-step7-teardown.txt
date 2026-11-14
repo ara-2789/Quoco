@@ -1,0 +1,9 @@
+timestamp(UTC): 2026-11-13T18:23:56Z
+HEAD: bfb6d94f2555067617152311509c45507881f069
+project-ref (supabase/.temp/project-ref of --workdir <main-checkout>): exfccwlrhoutkgrlikod
+git status --porcelain: []
+script: b2a.cjs sha256 37b7b934767bd37b267f9e6f92a8b54b2d889c659f15d0dd5b7af8b0268acc30  subcommand: teardown
+$ cat supabase/.temp/project-ref  -> exfccwlrhoutkgrlikod
+target ref (from SUPABASE_TEST_URL): exfccwlrhoutkgrlikod
+teardown complete for run f5c4d2cd-dfbe-4a59-aa43-b6d86d91a02c
+[exit 0]

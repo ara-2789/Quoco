@@ -1,0 +1,18 @@
+timestamp(UTC): 2026-11-14T02:14:31Z
+HEAD: 4cda6cb6e64dec7b6d007bc0cf1a82c2aa354263
+base: 39289b29c973c425080a853286e1439d6195820e
+--- paths that must be UNTOUCHED against the base (nothing printed = untouched):
+[end of untouched list]
+--- the ONE allowed pm-fixtures.ts change (makeDocWithCaption plus one import):
+ test/helpers/pm-fixtures.ts | 11 ++++++++---
+ 1 file changed, 8 insertions(+), 3 deletions(-)
+@@ -11,6 +11,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
+@@ -178,14 +179,18 @@ export async function makeDocWithCaption(
+--- full list of paths changed since the base:
+test/capture-file-route-unclassified.test.ts
+test/capture-kind-trigger.test.ts
+test/helpers/pm-fixtures.ts
+--- sha256 of the held file and both DOWNs:
+2c4ee3bca72fc6f89ec37821594de565490bf65740be701470d5e8789586357e  docs/reviews/052_mi_kind_deferred.sql
+bb21dfe0b7c358c1c36a95a3cc17d457526e9d3dd0e7580da915182cb530907f  docs/reviews/052-down-testdb.sql
+344f4b2e5a1fe42c0502a63a47feee9e3980e830adbc2d03a9288610991cc43a  docs/reviews/052-down-prod.sql

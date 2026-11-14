@@ -1,0 +1,6 @@
+#!/bin/bash
+# c349.sh <label> : the #349 counts (project ref printed first); output ~/quoco-records/052-build/b2b/c349-<label>.txt
+. $HOME/.claude/jobs/2a6b4d65/tmp/lib.sh
+OUT=$HOME/quoco-records/052-build/b2b
+{ hdr; Q "#349 counts ($1)" $T/sql/c349.sql; } > $OUT/c349-$1.txt 2>&1
+grep -E '^timestamp|"(k|v)"|exit' $OUT/c349-$1.txt | tr -d ' \n' | sed 's/"k"/\n"k"/g'; echo

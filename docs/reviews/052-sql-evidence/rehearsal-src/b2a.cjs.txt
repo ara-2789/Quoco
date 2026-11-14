@@ -1,0 +1,299 @@
+'use strict'
+// 052 block 2a rehearsal harness (test-db ONLY). No secrets in this file: URL and keys are read from .env.test
+// (the main checkout's gitignored file) and are never printed. Subcommands: setup | matrix | sql4z | race | tx-state | sql6b | teardown
+const fs = require('fs')
+const path = require('path')
+const { randomUUID } = require('crypto')
+const { createClient } = require('@supabase/supabase-js')
+
+const ENV_FILE = process.env.B2A_ENV_FILE
+const KIT_FILE = process.env.B2A_KIT_FILE
+const SQL_OUT = process.env.B2A_SQL_OUT
+const ALLOWED_REF = 'exfccwlrhoutkgrlikod'
+const PASSWORD = 'zz-capture-Rehearsal-Pw-2c91' // same throwaway test password as test/helpers/capture-fixtures.ts
+
+for (const line of fs.readFileSync(ENV_FILE, 'utf8').split('\n')) {
+  const m = line.match(/^([A-Z_]+)=(.*)$/)
+  if (m) process.env[m[1]] = m[2].replace(/^['"]|['"]$/g, '')
+}
+const URL_ = process.env.SUPABASE_TEST_URL
+const SERVICE = process.env.SUPABASE_TEST_SERVICE_ROLE_KEY
+const ANON = process.env.SUPABASE_TEST_ANON_KEY
+if (!URL_ || !SERVICE || !ANON) throw new Error('env missing')
+const m = URL_.match(/^https:\/\/([a-z0-9]+)\.supabase\.co\/?$/i)
+if (!m || m[1] !== ALLOWED_REF || process.env.SUPABASE_TEST_PROJECT_REF !== ALLOWED_REF) throw new Error('GUARD: not the test-db ref')
+console.log('target ref (from SUPABASE_TEST_URL):', m[1])
+
+const OPTS = { auth: { persistSession: false, autoRefreshToken: false } }
+const svc = createClient(URL_, SERVICE, OPTS)
+const loadKit = () => JSON.parse(fs.readFileSync(KIT_FILE, 'utf8'))
+const saveKit = (k) => fs.writeFileSync(KIT_FILE, JSON.stringify(k, null, 2))
+
+async function mint(email) {
+  const { data, error } = await svc.auth.admin.createUser({ email, password: PASSWORD, email_confirm: true })
+  if (error || !data.user) throw new Error('mint failed: ' + (error && error.message))
+  return data.user.id
+}
+async function claim(authId, tenantId, role, status, fullName) {
+  const { data: ex, error: e1 } = await svc.from('users').select('id').eq('auth_id', authId).maybeSingle()
+  if (e1) throw new Error('claim select ' + e1.message)
+  const patch = { tenant_id: tenantId, role, status, full_name: fullName }
+  if (ex) { const { error } = await svc.from('users').update(patch).eq('auth_id', authId); if (error) throw new Error('claim upd ' + error.message); return ex.id }
+  const { data, error } = await svc.from('users').insert({ auth_id: authId, ...patch }).select('id').single()
+  if (error) throw new Error('claim ins ' + error.message)
+  return data.id
+}
+async function token(email) {
+  const c = createClient(URL_, ANON, OPTS)
+  const { data, error } = await c.auth.signInWithPassword({ email, password: PASSWORD })
+  if (error) throw new Error('signIn failed ' + error.message)
+  return data.session.access_token
+}
+// raw PostgREST call; returns {status, code, message, body}
+async function http(method, p, { tok, headers = {}, body } = {}) {
+  const key = tok === 'service' ? SERVICE : ANON
+  const auth = tok === 'service' ? SERVICE : tok || ANON
+  const r = await fetch(URL_ + '/rest/v1/' + p, {
+    method,
+    headers: { apikey: key, Authorization: 'Bearer ' + auth, 'Content-Type': 'application/json', ...headers },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+  const text = await r.text()
+  let j = null
+  try { j = text ? JSON.parse(text) : null } catch { j = { raw: text.slice(0, 200) } }
+  return { status: r.status, code: j && j.code, message: j && j.message, body: j }
+}
+const rpc = (fn, args, o = {}) => http('POST', 'rpc/' + fn, { ...o, body: args })
+
+async function dbState(docId) {
+  const d = await http('GET', `capture_documents?id=eq.${docId}&select=kind,kind_source,kind_set_by,kind_set_at,received_at`, { tok: 'service' })
+  const del = await http('GET', `deliveries?or=(dc_document_id.eq.${docId},created_from_invoice_id.eq.${docId})&select=id,status`, { tok: 'service' })
+  const lk = await http('GET', `delivery_invoice_links?invoice_document_id=eq.${docId}&select=id`, { tok: 'service' })
+  const row = d.body && d.body[0]
+  return row
+    ? `doc{kind=${row.kind},source=${row.kind_source},set_by=${row.kind_set_by ? 'set' : 'null'},set_at=${row.kind_set_at ? 'set' : 'null'},received_at=${row.received_at ? 'set' : 'NULL'}} deliveries=${(del.body || []).length}${(del.body || []).map((x) => '(' + x.status + ')').join('')} links=${(lk.body || []).length}`
+    : 'doc NOT FOUND'
+}
+
+async function mkDoc(kit, label) {
+  const phone = '+19995552' + String(Math.floor(Math.random() * 1e6)).padStart(6, '0')
+  kit.phones.push(phone)
+  saveKit(kit)
+  const sid = (s) => `ZZTestCapture-${kit.runTag}-${label}-${s}`
+  const turn = async (msg, sidSuffix, media, start) => {
+    const { error: pe } = await svc.from('processed_messages').insert({ message_sid: sid(sidSuffix) })
+    if (pe && pe.code !== '23505') throw new Error('processed_messages ' + pe.message)
+    const r = await svc.rpc('apply_material_inward_turn', {
+      p_phone_number: phone, p_tenant_id: kit.tenantA, p_user_id: kit.users.engS.id, p_project_id: kit.p1,
+      p_message: msg, p_message_sid: sid(sidSuffix), p_media: media, p_start_flow: start, p_now: new Date().toISOString(),
+    })
+    if (r.error) throw new Error(`apply_material_inward_turn(${sidSuffix}) ${r.error.code}: ${r.error.message}`)
+    return r.data
+  }
+  const t0 = await turn('4', 's0', null, true)
+  const media = [{ index: 0, content_type: 'image/jpeg', url: 'https://example.invalid/m/0' }]
+  const t1 = await turn(null, 's1', media, false)
+  return { docId: t1.document_id, start: t0, file: t1, phone }
+}
+
+const short = (s, n = 160) => (s == null ? '' : String(s).replace(/\s+/g, ' ').slice(0, n))
+const line = (label, r, st) => console.log(`${label}\n    HTTP ${r.status} | code=${r.code ?? '-'} | message=${short(r.message)}${st ? '\n    DB after: ' + st : ''}`)
+
+async function setup() {
+  const runTag = randomUUID()
+  const tag = runTag.slice(0, 8)
+  const tenantA = randomUUID(), tenantB = randomUUID(), p1 = randomUUID(), p3 = randomUUID()
+  for (const [id, slug, name] of [[tenantA, `zz-test-capture-b2a-a-${runTag}`, `ZZTestCapture-${runTag}-tenant-a`], [tenantB, `zz-test-capture-b2a-b-${runTag}`, `ZZTestCapture-${runTag}-tenant-b`]]) {
+    const { error } = await svc.from('tenants').insert({ id, slug, name }); if (error) throw new Error('tenant ' + error.message)
+  }
+  const specs = {
+    engS: { role: 'engineer', tenant: tenantA, project: p1, mrole: 'engineer' },
+    pm1: { role: 'pm', tenant: tenantA, project: p1, mrole: 'pm' },
+    pm1b: { role: 'pm', tenant: tenantA, project: p1, mrole: 'pm' },
+    admNon: { role: 'admin', tenant: tenantA },
+    pmB: { role: 'pm', tenant: tenantB, project: p3, mrole: 'pm' },
+  }
+  const users = {}
+  for (const [label, s] of Object.entries(specs)) {
+    const email = `zz-b2a-${label}-${tag}@quoco.test`
+    const authId = await mint(email)
+    users[label] = { id: await claim(authId, s.tenant, s.role, 'active', `ZZTestCapture-${runTag}-${label}`), email, authId }
+  }
+  for (const [id, tenant, name] of [[p1, tenantA, `ZZTestCapture-${runTag}-P1`], [p3, tenantB, `ZZTestCapture-${runTag}-P3`]]) {
+    const { error } = await svc.from('projects').insert({ id, tenant_id: tenant, name, created_by: users.pm1.id }); if (error) throw new Error('project ' + error.message)
+  }
+  for (const [label, s] of Object.entries(specs)) {
+    if (!s.project) continue
+    const { error } = await svc.from('project_members').insert({ tenant_id: s.tenant, project_id: s.project, user_id: users[label].id, role: s.mrole })
+    if (error) throw new Error('member ' + label + ' ' + error.message)
+  }
+  const kit = { runTag, tenantA, tenantB, p1, p3, users, phones: [], docs: {} }
+  saveKit(kit)
+  console.log('kit built: run tag', runTag, '| tenants zz-test-capture-b2a-{a,b}-<runTag> | users', Object.keys(users).join(','))
+  // 4k: engineer turn through the REAL RPC as service_role
+  for (const l of ['d1', 'd2']) {
+    const d = await mkDoc(kit, l)
+    kit.docs[l] = d.docId
+    saveKit(kit)
+    console.log(`4k ${l}: start turn -> ${JSON.stringify(d.start)}`)
+    console.log(`4k ${l}: file turn  -> keys=[${Object.keys(d.file).join(',')}] document_id=${d.file.document_id ? 'present' : 'MISSING'} delivery_id=${'delivery_id' in d.file ? JSON.stringify(d.file.delivery_id) : 'KEY ABSENT'}`)
+    console.log(`4k ${l}: DB after: ${await dbState(d.docId)}`)
+  }
+}
+
+async function matrix() {
+  const kit = loadKit()
+  const { d1, d2 } = kit.docs
+  const tok = {}
+  for (const l of ['pm1', 'pm1b', 'engS', 'admNon', 'pmB']) tok[l] = await token(kit.users[l].email)
+  console.log('callers: anon (anon key), pm1 (PM of P1), engS (engineer who sent the documents, with login), admNon (admin, no membership), pmB (PM of another tenant), service_role')
+  console.log('documents: d1, d2 unclassified at start. d1 state:', await dbState(d1), '| d2 state:', await dbState(d2))
+  console.log('\n== a. anon -> rpc pm_classify_document (expect 42501)')
+  line('a', await rpc('pm_classify_document', { p_document_id: d1, p_kind: 'dc' }), await dbState(d1))
+  console.log('\n== b. any role -> private helper, NO Content-Profile header (expect 404)')
+  for (const who of ['anon', 'pm1', 'service']) {
+    line('b ' + who, await rpc('capture_apply_classification', { p_document_id: d1, p_kind: 'dc', p_set_by: kit.users.pm1.id }, { tok: who === 'anon' ? undefined : who === 'service' ? 'service' : tok.pm1 }), await dbState(d1))
+  }
+  console.log('\n== c. authenticated -> private helper WITH Content-Profile: private (print exactly what comes back)')
+  const c = await rpc('capture_apply_classification', { p_document_id: d1, p_kind: 'dc', p_set_by: kit.users.pm1.id }, { tok: tok.pm1, headers: { 'Content-Profile': 'private' } })
+  line('c', c, await dbState(d1))
+  console.log('    raw body:', short(JSON.stringify(c.body), 400))
+  const c2 = await rpc('capture_apply_classification', { p_document_id: d1, p_kind: 'dc', p_set_by: kit.users.pm1.id }, { tok: 'service', headers: { 'Content-Profile': 'private' } })
+  line('c (service_role, same header)', c2, await dbState(d1))
+  console.log('    raw body:', short(JSON.stringify(c2.body), 400))
+  console.log('\n== d. PM of the project -> pm_classify_document on unclassified d1 (POSITIVE CONTROL)')
+  const d = await rpc('pm_classify_document', { p_document_id: d1, p_kind: 'dc' }, { tok: tok.pm1 })
+  line('d', d, await dbState(d1))
+  console.log('    result keys:', d.body ? Object.keys(d.body).join(',') : '-', '| already_classified=', d.body && d.body.already_classified)
+  console.log('\n== e. same call again (expect already_classified true, no new rows)')
+  const e = await rpc('pm_classify_document', { p_document_id: d1, p_kind: 'dc' }, { tok: tok.pm1 })
+  line('e', e, await dbState(d1))
+  console.log('    result keys:', e.body ? Object.keys(e.body).join(',') : '-', '| already_classified=', e.body && e.body.already_classified)
+  console.log('\n== f. same document, a different kind (expect QE011)')
+  line('f', await rpc('pm_classify_document', { p_document_id: d1, p_kind: 'invoice' }, { tok: tok.pm1 }), await dbState(d1))
+  console.log('\n== g. S-5: the ENGINEER who sent the document -> QE015, d2 stays unclassified')
+  line('g', await rpc('pm_classify_document', { p_document_id: d2, p_kind: 'dc' }, { tok: tok.engS }), await dbState(d2))
+  console.log('\n== h. S-5: admin without PM membership -> QE015')
+  line('h', await rpc('pm_classify_document', { p_document_id: d2, p_kind: 'dc' }, { tok: tok.admNon }), await dbState(d2))
+  console.log('\n== i. PM of another tenant -> QE015 (same code as not-found)')
+  line('i', await rpc('pm_classify_document', { p_document_id: d2, p_kind: 'dc' }, { tok: tok.pmB }), await dbState(d2))
+  line('i-control: unknown document id as pm1 (same code expected)', await rpc('pm_classify_document', { p_document_id: randomUUID(), p_kind: 'dc' }, { tok: tok.pm1 }))
+  console.log('\n== j. service_role direct writes to capture_documents through the API (each must be refused)')
+  line('j INSERT', await http('POST', 'capture_documents', { tok: 'service', body: { tenant_id: kit.tenantA, project_id: kit.p1, kind: 'dc' } }), await dbState(d2))
+  line('j UPDATE', await http('PATCH', `capture_documents?id=eq.${d2}`, { tok: 'service', body: { caption: 'x' } }), await dbState(d2))
+  line('j DELETE', await http('DELETE', `capture_documents?id=eq.${d2}`, { tok: 'service' }), await dbState(d2))
+  line('j service_role wrapper pm_classify_document (EXECUTE revoked)', await rpc('pm_classify_document', { p_document_id: d2, p_kind: 'dc' }, { tok: 'service' }), await dbState(d2))
+  console.log('\nfinal: d1', await dbState(d1), '| d2', await dbState(d2))
+}
+
+async function sql4z() {
+  const kit = loadKit()
+  fs.writeFileSync(SQL_OUT, `BEGIN;
+GRANT USAGE ON SCHEMA private TO authenticated;
+SET LOCAL ROLE authenticated;
+SELECT private.capture_apply_classification('${kit.docs.d2}', 'dc', '${kit.users.pm1.id}');
+ROLLBACK;
+`)
+  console.log('wrote', SQL_OUT)
+}
+
+async function race() {
+  const kit = loadKit()
+  const N = parseInt(process.env.B2A_RACE_N || '20', 10)
+  const tok = { pm1: await token(kit.users.pm1.email), pm1b: await token(kit.users.pm1b.email) }
+  const totals = { same: { runs: 0, ok: 0 }, diff: { runs: 0, ok: 0 } }
+  let overlapRuns = 0
+  for (const mode of ['same', 'diff']) {
+    console.log(`\n=== race (${mode === 'same' ? 'i: same kind dc/dc' : 'ii: different kinds dc/invoice'}), ${N} runs on fresh documents`)
+    for (let i = 1; i <= N; i++) {
+      const doc = (await mkDoc(kit, `race-${mode}-${i}`)).docId
+      const kinds = mode === 'same' ? ['dc', 'dc'] : i % 2 ? ['dc', 'invoice'] : ['invoice', 'dc']
+      const call = async (who, kind) => {
+        const t0 = Date.now()
+        const r = await rpc('pm_classify_document', { p_document_id: doc, p_kind: kind }, { tok: tok[who] })
+        return { who, kind, r, t0, t1: Date.now() }
+      }
+      const [A, B] = await Promise.all([call('pm1', kinds[0]), call('pm1b', kinds[1])])
+      const desc = (x) => `${x.who}/${x.kind}: HTTP ${x.r.status} ${x.r.code ? 'code=' + x.r.code : 'ac=' + (x.r.body && x.r.body.already_classified)} [${x.t0 % 100000}-${x.t1 % 100000}ms]`
+      const overlap = Math.min(A.t1, B.t1) - Math.max(A.t0, B.t0)
+      if (overlap > 0) overlapRuns++
+      const st = await dbState(doc)
+      const nDel = parseInt((st.match(/deliveries=(\d+)/) || [])[1] || '-1', 10)
+      let ok
+      const wins = [A, B].filter((x) => x.r.status === 200 && x.r.body && x.r.body.already_classified === false)
+      const dups = [A, B].filter((x) => x.r.status === 200 && x.r.body && x.r.body.already_classified === true)
+      const conf = [A, B].filter((x) => x.r.code === 'QE011')
+      if (mode === 'same') ok = nDel === 1 && wins.length === 1 && dups.length === 1
+      else ok = nDel === 1 && wins.length === 1 && conf.length === 1
+      totals[mode].runs++; if (ok) totals[mode].ok++
+      console.log(`run ${mode}-${i}: ${desc(A)} || ${desc(B)} || client overlap ${overlap}ms\n    final: ${st} => ${ok ? 'OK' : 'FAIL'}`)
+      if (nDel !== 1) { console.log(`STOP: ${nDel} deliveries for one document in run ${mode}-${i}`); console.log('TOTALS so far', JSON.stringify(totals)); process.exit(3) }
+    }
+  }
+  console.log('\nTOTALS', JSON.stringify(totals), '| runs whose two client requests overlapped in time:', overlapRuns, '(client-side only; see CLAUDE.md section 0 on what a local run can prove)')
+  if (totals.same.ok !== totals.same.runs || totals.diff.ok !== totals.diff.runs) process.exit(4)
+}
+
+async function sql6b() {
+  const kit = loadKit()
+  fs.writeFileSync(SQL_OUT, `SELECT d.id AS document_id, t.slug AS tenant_slug, private.capture_apply_classification(d.id, 'dc', '${kit.users.pm1.id}')::text AS result
+  FROM public.capture_documents d JOIN public.tenants t ON t.id = d.tenant_id
+ WHERE d.tenant_id IN ('${kit.tenantA}', '${kit.tenantB}') AND d.kind IS NULL ORDER BY d.created_at;
+`)
+  console.log('wrote', SQL_OUT)
+}
+
+async function teardown() {
+  const kit = loadKit()
+  const ids = [kit.tenantA, kit.tenantB]
+  for (const t of ids) {
+    const { error } = await svc.rpc('quoco_test_capture_cleanup', { p_tenant_id: t }); if (error) throw new Error('cleanup ' + error.message)
+    const j = await svc.from('jobs').delete().eq('type', 'capture_ingest').contains('payload', { tenant_id: t }); if (j.error) throw new Error('jobs ' + j.error.message)
+    const dl = await svc.from('daily_logs').delete().eq('tenant_id', t); if (dl.error) throw new Error('daily_logs ' + dl.error.message)
+  }
+  let r = await svc.from('processed_messages').delete().like('message_sid', `ZZTestCapture-${kit.runTag}-%`); if (r.error) throw new Error('pm ' + r.error.message)
+  if (kit.phones.length) { r = await svc.from('whatsapp_sessions').delete().in('phone_number', kit.phones); if (r.error) throw new Error('sessions ' + r.error.message) }
+  for (const [tbl] of [['project_members'], ['projects'], ['users']]) { r = await svc.from(tbl).delete().in('tenant_id', ids); if (r.error) throw new Error(tbl + ' ' + r.error.message) }
+  for (const u of Object.values(kit.users)) { const { error } = await svc.auth.admin.deleteUser(u.authId); if (error) throw new Error('deleteUser ' + error.message) }
+  r = await svc.from('tenants').delete().in('id', ids); if (r.error) throw new Error('tenants ' + r.error.message)
+  console.log('teardown complete for run', kit.runTag)
+}
+
+async function mkdocCmd() {
+  const kit = loadKit()
+  const label = process.env.B2A_LABEL
+  const d = await mkDoc(kit, label)
+  kit.docs[label] = d.docId
+  saveKit(kit)
+  console.log(`created ${label}: document ${d.docId} | ${await dbState(d.docId)}`)
+}
+
+// concurrency positive control: classify through PostgREST while ANOTHER session holds a row lock on the document
+async function ctl() {
+  const kit = loadKit()
+  const doc = kit.docs[process.env.B2A_LABEL]
+  const t = await token(kit.users.pm1.email)
+  const t0 = Date.now()
+  console.log('PostgREST classify call issued at', new Date(t0).toISOString())
+  const r = await rpc('pm_classify_document', { p_document_id: doc, p_kind: 'dc' }, { tok: t })
+  const t1 = Date.now()
+  console.log('PostgREST classify call returned at', new Date(t1).toISOString(), '| latency ms =', t1 - t0)
+  line('result', r, await dbState(doc))
+}
+
+async function sql5() {
+  const kit = loadKit()
+  const doc = kit.docs.lockdoc
+  const claims = `SELECT set_config('request.jwt.claims', json_build_object('sub', '${kit.users.pm1.authId}', 'role', 'authenticated')::text, true);`
+  const out = path.dirname(SQL_OUT)
+  fs.writeFileSync(path.join(out, 'lock-ctl-s1.sql'), `BEGIN;\nSELECT id FROM public.capture_documents WHERE id = '${doc}' FOR NO KEY UPDATE;\nSELECT pg_sleep(12);\nCOMMIT;\nSELECT 'S1 committed (control)' AS s1;\n`)
+  fs.writeFileSync(path.join(out, 'lock-test-s1.sql'), `BEGIN;\n${claims}\nSET LOCAL ROLE authenticated;\nSELECT public.pm_classify_document('${doc}', 'dc')::text AS s1_classify_result;\nSELECT pg_sleep(12);\nRESET ROLE;\nCOMMIT;\nSELECT 'S1 committed (test)' AS s1;\n`)
+  fs.writeFileSync(path.join(out, 'lock-s2.sql'), `SET lock_timeout = '2s';\nBEGIN;\nSELECT clock_timestamp() AS s2_started;\nSELECT id FROM public.capture_documents WHERE id = '${doc}' FOR KEY SHARE;\nSELECT clock_timestamp() AS s2_acquired_for_key_share;\nCOMMIT;\n`)
+  fs.writeFileSync(path.join(out, 'lock-ctl2-s1.sql'), `BEGIN;\nSELECT id FROM public.capture_documents WHERE id = '${kit.docs.ctldoc}' FOR UPDATE;\nSELECT pg_sleep(12);\nCOMMIT;\nSELECT 'S1 committed (PostgREST positive control)' AS s1;\n`)
+  console.log('wrote lock SQL files for', doc, 'and', kit.docs.ctldoc)
+}
+
+const cmd = process.argv[2]
+const fns = { setup, matrix, sql4z, race, sql6b, teardown, mkdoc: mkdocCmd, ctl, sql5 }
+if (!fns[cmd]) { console.log('usage: setup|matrix|sql4z|race|sql6b|teardown'); process.exit(2) }
+fns[cmd]().catch((e) => { console.error('ERROR:', e.message); process.exit(1) })

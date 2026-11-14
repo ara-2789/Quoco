@@ -1,0 +1,18 @@
+HEAD a122d30ae836b1da274f742bca57e0d6d7e73d9f; git status --porcelain (excluding untracked evidence dir and .codex):
+[end porcelain]
+378d533c5e8ad800bfed967a28bf5cc4c823d063acd696b92af25376a33e2584  docs/reviews/052-down-testdb.sql
+003c0fbf49e081f8f8f7d013d977288b995bef0a3916c92cb9c364a673544910  docs/reviews/052-down-prod.sql
+052-down-testdb.sql    apply_material_inward_turn             lines 71-413  embedded md5 cecc170b26208d4b820402879e020271  pre-052 cecc170b26208d4b820402879e020271  EQUAL
+052-down-testdb.sql    trg_capture_documents_before_insert    lines 462-483  embedded md5 b5467b20392b7e26449602acb9da2d00  pre-052 b5467b20392b7e26449602acb9da2d00  EQUAL
+052-down-testdb.sql    trg_capture_documents_before_update    lines 415-460  embedded md5 4a7f470362e0bc7b7687737860d112f4  pre-052 4a7f470362e0bc7b7687737860d112f4  EQUAL
+052-down-prod.sql      apply_material_inward_turn             lines 71-413  embedded md5 cecc170b26208d4b820402879e020271  pre-052 cecc170b26208d4b820402879e020271  EQUAL
+052-down-prod.sql      trg_capture_documents_before_insert    lines 462-483  embedded md5 b5467b20392b7e26449602acb9da2d00  pre-052 b5467b20392b7e26449602acb9da2d00  EQUAL
+052-down-prod.sql      trg_capture_documents_before_update    lines 415-460  embedded md5 4a7f470362e0bc7b7687737860d112f4  pre-052 4a7f470362e0bc7b7687737860d112f4  EQUAL
+exit=0
+-- only differences between the two DOWN files:
+< -- docs/reviews/052-down-testdb.sql  -- DOWN artifact for migration 052 (MI-KIND-REMOVAL), TEST-DB (exfccwlrhoutkgrlikod).
+< -- NEVER APPLY THIS FILE TO THE OTHER DATABASE (prod, jvxwqignooseazzmwhvl). That database has its own artifact,
+< -- docs/reviews/052-down-prod.sql: same body, its own header.
+> -- docs/reviews/052-down-prod.sql  -- DOWN artifact for migration 052 (MI-KIND-REMOVAL), PROD (jvxwqignooseazzmwhvl).
+> -- NEVER APPLY THIS FILE TO THE OTHER DATABASE (test-db, exfccwlrhoutkgrlikod). That database has its own artifact,
+> -- docs/reviews/052-down-testdb.sql: same body, its own header.

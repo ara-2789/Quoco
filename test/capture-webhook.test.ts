@@ -26,7 +26,7 @@ vi.mock('@sentry/nextjs', () => ({ captureMessage, captureException }))
 import { handleWebhookPost } from '@/app/api/whatsapp/webhook/route'
 import { UNSUPPORTED_MEDIA_REPLY } from '@/lib/whatsapp/media-reply'
 import {
-  MI_ACK_QUESTION_DC,
+  MI_ACK_QUESTION,
   MI_CAPTURE_FAILED_REPLY,
   MI_FILE_RECEIVED,
   MI_SESSION_ENDED_REPLY,
@@ -164,11 +164,11 @@ function rpcSpy(stub?: (name: string) => { data: unknown; error: unknown } | und
 
 describe('T-PDF-GATE-1: a PDF inside a live invoice session is accepted', () => {
   it('a PDF at step 2: ack question; +1 document, +1 pending file, +1 capture_ingest job; no unsupported reply', async () => {
-    await seed('invoice', 2, { mi_kind: 'dc', mi_reask: 0 })
+    await seed('invoice', 2, { mi_reask: 0 })
     const [d0, f0, p0, j0] = [await docs(), await files(), await pendingFiles(), await ingestJobs()]
     const r = await post([PDF])
     expect(r.status).toBe(200)
-    expect(r.text).toBe([MI_FILE_RECEIVED(1), MI_ACK_QUESTION_DC].join('\n'))
+    expect(r.text).toBe([MI_FILE_RECEIVED(1), MI_ACK_QUESTION].join('\n'))
     expect(r.text).not.toBe(UNSUPPORTED_MEDIA_REPLY)
     expect(await docs()).toBe(d0 + 1)
     expect(await files()).toBe(f0 + 1)
@@ -179,10 +179,10 @@ describe('T-PDF-GATE-1: a PDF inside a live invoice session is accepted', () => 
   })
 
   it('jpeg + pdf in one message: one document, two files', async () => {
-    await seed('invoice', 2, { mi_kind: 'dc', mi_reask: 0 })
+    await seed('invoice', 2, { mi_reask: 0 })
     const [d0, f0, j0] = [await docs(), await files(), await ingestJobs()]
     const r = await post([JPEG, PDF])
-    expect(r.text).toBe([MI_FILE_RECEIVED(2), MI_ACK_QUESTION_DC].join('\n'))
+    expect(r.text).toBe([MI_FILE_RECEIVED(2), MI_ACK_QUESTION].join('\n'))
     expect(await docs()).toBe(d0 + 1)
     expect(await files()).toBe(f0 + 2)
     expect(await ingestJobs()).toBe(j0 + 1)
@@ -229,7 +229,7 @@ describe('T-PDF-GATE-2: outside an invoice session a PDF gets today\'s reply and
 
 describe('T-D1-4 (PDF half)', () => {
   it('a PDF as the first message after expiry: the ended reply, nothing stored, no nudge, one counts-only event', async () => {
-    await seed('invoice', 3, { mi_kind: 'dc', mi_document_id: crypto.randomUUID(), mi_last_sid: 'sid-y', mi_reask: 0 }, { updatedAt: ago(31), expiresAt: ago(1) })
+    await seed('invoice', 3, { mi_document_id: crypto.randomUUID(), mi_last_sid: 'sid-y', mi_reask: 0 }, { updatedAt: ago(31), expiresAt: ago(1) })
     const [d0, f0, i0, m0] = [await docs(), await files(), await ingestJobs(), await mediaJobs()]
     const { client, calls } = rpcSpy()
     const r = await post([PDF], { client })
@@ -297,7 +297,7 @@ describe('T-Q9 (narrowed): only the routing READ is caught', () => {
   // so the RPC is stubbed to report what it would return if a hindrance flow took over between the router's read and
   // the RPC's lock: the handler then throws (outside the S-F catch, by design).
   it('T-Q9b a handler throw on a PDF in a live invoice session propagates (no UNSUPPORTED_MEDIA_REPLY, no routing_read_failed event)', async () => {
-    await seed('invoice', 2, { mi_kind: 'dc', mi_reask: 0 })
+    await seed('invoice', 2, { mi_reask: 0 })
     const wrongFlowHindrance = (name: string) =>
       name === 'apply_material_inward_turn'
         ? { data: { outcome: 'wrong_flow', current_flow: 'hindrance', current_step: 1 }, error: null }
@@ -321,20 +321,20 @@ describe('T-PDF-CAPTION / T-PDF-NOITEMS', () => {
       if (error) throw new Error(error.message)
       return (data ?? []).map((d) => (d as { caption: string | null }).caption)
     }
-    await seed('invoice', 2, { mi_kind: 'dc', mi_reask: 0 })
+    await seed('invoice', 2, { mi_reask: 0 })
     const pdf = await post([PDF], { body: pdfText })
-    expect(pdf.text).toBe([MI_FILE_RECEIVED(1), MI_ACK_QUESTION_DC].join('\n'))
+    expect(pdf.text).toBe([MI_FILE_RECEIVED(1), MI_ACK_QUESTION].join('\n'))
     expect(await captionOf(pdf.sid)).toEqual([pdfText])
 
     await kit.svc.from('whatsapp_sessions').delete().eq('phone_number', enginePhone)
-    await seed('invoice', 2, { mi_kind: 'dc', mi_reask: 0 })
+    await seed('invoice', 2, { mi_reask: 0 })
     const photo = await post([JPEG], { body: photoText })
-    expect(photo.text).toBe([MI_FILE_RECEIVED(1), MI_ACK_QUESTION_DC].join('\n'))
+    expect(photo.text).toBe([MI_FILE_RECEIVED(1), MI_ACK_QUESTION].join('\n'))
     expect(await captionOf(photo.sid)).toEqual([photoText]) // control: the photo path stores its caption the same way
   })
 
   it('T-PDF-NOITEMS a PDF whose items carry no URL, in a live invoice session: MI_UNSUPPORTED_FILE_REPLY, the RPC is not called', async () => {
-    await seed('invoice', 2, { mi_kind: 'dc', mi_reask: 0 })
+    await seed('invoice', 2, { mi_reask: 0 })
     const [d0, f0, j0] = [await docs(), await files(), await ingestJobs()]
     const { client, calls } = rpcSpy()
     const r = await post([{ type: 'application/pdf', noUrl: true }], { client })
@@ -352,7 +352,7 @@ describe('T-PDF-CAPTION / T-PDF-NOITEMS', () => {
 
 describe('T-SF-1 (webhook half)', () => {
   it('a failing RPC on a PDF: HTTP 200, MI_CAPTURE_FAILED_REPLY, SID row present; a resend with a NEW SID creates exactly one document', async () => {
-    await seed('invoice', 2, { mi_kind: 'dc', mi_reask: 0 })
+    await seed('invoice', 2, { mi_reask: 0 })
     const d0 = await docs()
     const failRpc = (name: string) =>
       name === 'apply_material_inward_turn'
@@ -372,7 +372,7 @@ describe('T-SF-1 (webhook half)', () => {
 
     // the engineer resends: a NEW SID on the real client
     const resend = await post([PDF])
-    expect(resend.text).toBe([MI_FILE_RECEIVED(1), MI_ACK_QUESTION_DC].join('\n'))
+    expect(resend.text).toBe([MI_FILE_RECEIVED(1), MI_ACK_QUESTION].join('\n'))
     expect(await docs()).toBe(d0 + 1)
   })
 })

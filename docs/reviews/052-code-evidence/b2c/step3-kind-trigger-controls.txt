@@ -1,0 +1,117 @@
+
+================ TK_CONTROL=<none, GREEN baseline>
+HEAD: 4cda6cb6e64dec7b6d007bc0cf1a82c2aa354263  file sha256: 05fd4488c04ddb4ad5b6b4bfa34a83e193f2339edfa966031d7303a6dc3b7550
+git status --short BEFORE: []
+      Tests  12 passed (12)
+exit 0 => GREEN
+git status --short AFTER: []
+
+================ TK_CONTROL=k1
+HEAD: 4cda6cb6e64dec7b6d007bc0cf1a82c2aa354263  file sha256: 05fd4488c04ddb4ad5b6b4bfa34a83e193f2339edfa966031d7303a6dc3b7550
+git status --short BEFORE: []
+   × T-K-1 nullable kind, NOT NULL received_at, the CHECKs and the same-tenant FK > received_at is NOT NULL (23502) and may not be after created_at (23514, capture_documents_received_order_chk); a valid one inserts 647ms
+     → expected undefined to be '23514' // Object.is equality
+AssertionError: expected undefined to be '23514' // Object.is equality
+      Tests  1 failed | 11 passed (12)
+exit 1 => RED
+git status --short AFTER: []
+
+================ TK_CONTROL=k1b
+HEAD: 4cda6cb6e64dec7b6d007bc0cf1a82c2aa354263  file sha256: 05fd4488c04ddb4ad5b6b4bfa34a83e193f2339edfa966031d7303a6dc3b7550
+git status --short BEFORE: []
+   × T-K-1 nullable kind, NOT NULL received_at, the CHECKs and the same-tenant FK > kind_set_by must be a user of the SAME tenant (composite FK, 23503); a same-tenant PM passes 1493ms
+     → expected undefined to be '23503' // Object.is equality
+AssertionError: expected undefined to be '23503' // Object.is equality
+      Tests  1 failed | 11 passed (12)
+exit 1 => RED
+git status --short AFTER: []
+
+================ TK_CONTROL=k2a
+HEAD: 4cda6cb6e64dec7b6d007bc0cf1a82c2aa354263  file sha256: 05fd4488c04ddb4ad5b6b4bfa34a83e193f2339edfa966031d7303a6dc3b7550
+git status --short BEFORE: []
+   × T-K-2 the update and insert triggers > NULL -> all four once, pm only; every later change is QE009 1824ms
+     → kind: expected undefined to be 'QE009' // Object.is equality
+AssertionError: kind: expected undefined to be 'QE009' // Object.is equality
+      Tests  1 failed | 11 passed (12)
+exit 1 => RED
+git status --short AFTER: []
+
+================ TK_CONTROL=k2b
+HEAD: 4cda6cb6e64dec7b6d007bc0cf1a82c2aa354263  file sha256: 05fd4488c04ddb4ad5b6b4bfa34a83e193f2339edfa966031d7303a6dc3b7550
+git status --short BEFORE: []
+   × T-K-2 the update and insert triggers > a change of received_at is QE009, on a classified and on an unclassified document; the same value is not a change 1515ms
+     → expected undefined to be 'QE009' // Object.is equality
+AssertionError: expected undefined to be 'QE009' // Object.is equality
+      Tests  1 failed | 11 passed (12)
+exit 1 => RED
+git status --short AFTER: []
+
+================ TK_CONTROL=k2c
+HEAD: 4cda6cb6e64dec7b6d007bc0cf1a82c2aa354263  file sha256: 05fd4488c04ddb4ad5b6b4bfa34a83e193f2339edfa966031d7303a6dc3b7550
+git status --short BEFORE: []
+   × T-K-2 the update and insert triggers > a caller-supplied kind_set_at is overwritten by the database; a backdated stamp is impossible 1315ms
+     → expected null not to be null
+AssertionError: expected null not to be null
+      Tests  1 failed | 11 passed (12)
+exit 1 => RED
+git status --short AFTER: []
+
+================ TK_CONTROL=k2d
+HEAD: 4cda6cb6e64dec7b6d007bc0cf1a82c2aa354263  file sha256: 05fd4488c04ddb4ad5b6b4bfa34a83e193f2339edfa966031d7303a6dc3b7550
+git status --short BEFORE: []
+   × T-K-2 the update and insert triggers > engineer_declared by UPDATE is refused; a kind without kind_set_by, and a source without a kind, are refused (QE009) 1301ms
+     → expected undefined to be 'QE009' // Object.is equality
+AssertionError: expected undefined to be 'QE009' // Object.is equality
+      Tests  1 failed | 11 passed (12)
+exit 1 => RED
+git status --short AFTER: []
+
+================ TK_CONTROL=k2e
+HEAD: 4cda6cb6e64dec7b6d007bc0cf1a82c2aa354263  file sha256: 05fd4488c04ddb4ad5b6b4bfa34a83e193f2339edfa966031d7303a6dc3b7550
+git status --short BEFORE: []
+   × T-K-2 the update and insert triggers > an INSERT carrying any of the four kind columns is QE012; the same insert without them passes 252ms
+     → kind: expected undefined to be 'QE012' // Object.is equality
+AssertionError: kind: expected undefined to be 'QE012' // Object.is equality
+      Tests  1 failed | 11 passed (12)
+exit 1 => RED
+git status --short AFTER: []
+
+================ TK_CONTROL=k2f
+HEAD: 4cda6cb6e64dec7b6d007bc0cf1a82c2aa354263  file sha256: 05fd4488c04ddb4ad5b6b4bfa34a83e193f2339edfa966031d7303a6dc3b7550
+git status --short BEFORE: []
+   × T-K-2 the update and insert triggers > service_role cannot UPDATE capture_documents through the API (42501); the owner-level helper can change a free column 1242ms
+     → expected undefined to be '42501' // Object.is equality
+AssertionError: expected undefined to be '42501' // Object.is equality
+      Tests  1 failed | 11 passed (12)
+exit 1 => RED
+git status --short AFTER: []
+
+================ TK_CONTROL=k3
+HEAD: 4cda6cb6e64dec7b6d007bc0cf1a82c2aa354263  file sha256: 05fd4488c04ddb4ad5b6b4bfa34a83e193f2339edfa966031d7303a6dc3b7550
+git status --short BEFORE: []
+   × T-K-3 a delivery on an unclassified document fails the composite FK > 23503 on an unclassified document; the same insert passes once the document is classified 1667ms
+     → expected undefined to be '23503' // Object.is equality
+AssertionError: expected undefined to be '23503' // Object.is equality
+      Tests  1 failed | 11 passed (12)
+exit 1 => RED
+git status --short AFTER: []
+
+================ TK_CONTROL=k4
+HEAD: 4cda6cb6e64dec7b6d007bc0cf1a82c2aa354263  file sha256: 05fd4488c04ddb4ad5b6b4bfa34a83e193f2339edfa966031d7303a6dc3b7550
+git status --short BEFORE: []
+   × T-K-4 / T-P-1 PM actions are refused before classification and work after > T-K-4 pm_link_invoice on an UNCLASSIFIED document is refused and links nothing; once classified it links 3697ms
+     → refused before classification: expected null not to be null
+AssertionError: refused before classification: expected null not to be null
+      Tests  1 failed | 11 passed (12)
+exit 1 => RED
+git status --short AFTER: []
+
+================ TK_CONTROL=p1
+HEAD: 4cda6cb6e64dec7b6d007bc0cf1a82c2aa354263  file sha256: 05fd4488c04ddb4ad5b6b4bfa34a83e193f2339edfa966031d7303a6dc3b7550
+git status --short BEFORE: []
+   × T-K-4 / T-P-1 PM actions are refused before classification and work after > T-P-1 approve and set-details have no delivery to act on before classification (QE015); after it they work 2164ms
+     → expected 'QE016' to be 'QE015' // Object.is equality
+AssertionError: expected 'QE016' to be 'QE015' // Object.is equality
+      Tests  1 failed | 11 passed (12)
+exit 1 => RED
+git status --short AFTER: []

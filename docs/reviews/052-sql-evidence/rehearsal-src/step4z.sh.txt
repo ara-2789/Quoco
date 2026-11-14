@@ -1,0 +1,12 @@
+#!/bin/bash
+. $HOME/.claude/jobs/2a6b4d65/tmp/lib.sh
+bash $T/nodestep.sh sql4z $T/sql4z-gen.log > /dev/null 2>&1
+{
+hdr
+Q "4z.1 schema ACL BEFORE" $T/sql/3d.sql
+Q "4z.2 transaction: GRANT USAGE ON SCHEMA private TO authenticated; SET LOCAL ROLE authenticated; call helper; ROLLBACK (error expected on the call)" $T/sql/gen-sql4z.sql
+Q "4z.3 schema ACL AFTER (must be unchanged: authenticated has no USAGE)" $T/sql/3d.sql
+Q "4z.4 fingerprint AFTER (must equal step 3's 6c69c545704f5d72dc776a55863feca9)" $T/sql/fp.sql
+Q "4z.5 d2 still unclassified" $T/sql/4z5.sql
+} > $OUT/step4z-helper-revoke.txt 2>&1
+grep -v -E "Initialising|boundary|warning" $OUT/step4z-helper-revoke.txt | grep -E '^----|usage|create|nspacl|role"|message|Error|exit|fingerprint|kind_is_null|BEGIN|GRANT|SET LOCAL|SELECT private|ROLLBACK' | cut -c1-400

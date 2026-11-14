@@ -1,0 +1,161 @@
+# 052 MI-KIND-REMOVAL: code review package (build blocks 2b and 2c: app code and tests)
+
+**Tier FULL. Status: local commits, one push at the end of the block, PR #355 stays DRAFT, not merged. Block 2a (test-db rehearsal) is in `052-test-db-apply-record.md`. Prod is untouched and has no 052; no prod GO exists.** Block 2c (14 Nov, section at the end) adds `makeDocWithCaption`, the route check, T-K/T-P tests and control re-runs; its evidence is in `docs/reviews/052-code-evidence/b2c/`. Raw evidence: `docs/reviews/052-code-evidence/` (every run file starts with timestamp, HEAD, `git status --porcelain` and the project ref).
+
+## Pins
+- Block start `20bd085301b4a9b5d301788f5d8d7345e3f8fcae`; `origin/main` `f007f61dc900b0d6c3ba997c5c93c628fb7f6c93`. The PR head is printed in the PR; the last CODE commit is `1940690` (types); later commits add only docs and evidence.
+- **Block 2c pin: `test/helpers/pm-fixtures.ts` IS changed, `makeDocWithCaption` only (plus one import); every other path below is re-proven untouched against `39289b2`: `b2c/step7-untouched-proof.txt`.** Held file `2c4ee3bc…6357e`, `052-down-testdb.sql` `bb21dfe0…907f`, `052-down-prod.sql` `344f4b2e…c43a`: unchanged since the rehearsal. `git diff --stat 20bd085 --` over those three files, `supabase/migrations`, the two lint JSONs, `lint-migrations.mjs`, `.github/workflows`, `pm-fixtures.ts`, six `pm-*` tests, `lib/capture`, `capture-switch.ts` and `app` is EMPTY: `step1c-untouched-proof.txt`.
+- Plan `kind-removal-plan.md` rev 8.1 sha256 `0cb3bc14…83ed` (P5 reads with sha256: `p5-reads.txt`). The plan is the specification; differences are listed at the end.
+- test-db at the start (P4): ledger tail 052, md5s `e32797b6…`, `4f83a28f…`, `cfcd5925…`, wrapper and helper present: `p4-testdb-state.txt`.
+
+- [14 Nov, review round 1 finding 8] The held SQL file is unchanged since the rehearsal; it changed once after SQL review round 1, by `beb0d21` (reviewed `cb5ca257…`, now `2c4ee3bc…`).
+
+## What changed in app code (commit `99e594d`, then `1940690`)
+- `lib/whatsapp/flows/material-inward.ts`: `readKind` deleted; steps 1 and 2 ask `MI_ASK_FILE`, step 3 asks `MI_ACK_QUESTION`; the `start` replies are `MI_ASK_FILE`; the step-1 re-ask is removed; `phoneNumber` leaves `ReplyContext` (its only user was `readKind`).
+- `lib/whatsapp/flows/material-inward-strings.ts`: six constants retired (`MI_ASK_KIND`, `MI_KIND_REASK`, `MI_ASK_FILE_DC`, `MI_ASK_FILE_INVOICE`, `MI_ACK_QUESTION_DC`, `MI_ACK_QUESTION_INVOICE`), two added. Exports: **21 before, 17 after**.
+- `types/database.ts`: regenerated from test-db; the diff is exactly the 052 hunks (26 insertions, 3 deletions: `types-diff.txt`). `tsc --noEmit` clean with it.
+- **delivery_id (SQL review answer 2): no app read of it exists in `lib/` or `app/`.** `applyMaterialInwardTurn` never returned it and no other file reads the RPC result (grep, `step1b-delivery-id-grep.txt`). Removed reads: 0. The only readers were test helpers, now reading it from the classify result.
+- The digit-4 allowlist is untouched: `lib/whatsapp/capture-switch.ts` has an empty diff (lines in `step1c-untouched-proof.txt`).
+
+## Strings: English approved 14 Nov 2026 (per Aravind); Tamil owed
+`MI_ASK_FILE` = "Send one DC or invoice. A PDF, or photos of all its pages together." `MI_ACK_QUESTION` = the plan's text with its three `\n`. [14 Nov, review finding 8: both comments now read "English approved 14 Nov 2026 (per Aravind); Tamil owed"; no string value changed, the exact-value test stays green.] The block text for the second differed from the plan (one line with " / "); Aravind ruled the plan text authoritative. Exact-value test: `test/unit/material-inward-strings.test.ts:52` (asserts the three `\n` and that the one-line form fails). T-STR-1 (`test/capture-handler.test.ts:172`) pins the 15 kept texts and the 2 new; T-STR-2 (`:183`) asserts 17 exports and the six retired names gone. Final approval at PR review.
+
+## Test map (plan id -> file:line)
+| Plan id | Where |
+|---|---|
+| T-E-1 (0 deliveries, 0 links, kind NULL, `delivery_id` key PRESENT and NULL) | `test/capture-engineer-flow.test.ts:47` |
+| T-E-1 QE012 on a missing processed_messages row, with a passing control | `capture-engineer-flow.test.ts:87` |
+| T-E-2 stray step-1 row read as step 2 (observed: it reports step 1, handled as 2) | `capture-engineer-flow.test.ts:100` |
+| S1/N-1/dup/expiry rows rewritten (inventory) | `capture-engineer-flow.test.ts:191, 228, 240` and the N-1, T-A27, T-DATE-1 rows |
+| T-C-1, T-C-1b | `test/capture-classify.test.ts:84, 112, 125` |
+| T-C-2 | `capture-classify.test.ts:146` |
+| T-C-3 (the struck QE012-on-missing-row row is NOT written), incl. 404/406 for the helper | `capture-classify.test.ts:167, 188, 198, 208` |
+| S-5 (sender engineer and admin without membership: QE015) | `capture-classify.test.ts:231` |
+| T-C-5, T-C-6, T-C-7 | `capture-classify.test.ts:250, 264, 273` |
+| T-C-8, T-C-9 (as written: the dedup row deleted, classify succeeds) | `capture-classify.test.ts:288, 304` |
+| T-C-4 (CI-only, two callers; NOT a forced interleaving) | `test/capture-races.test.ts:311` |
+| T-D8-11 rewritten (pinned normalised headers, alias table, every schema, 4 controls) | `test/capture-files-immutability.test.ts:378-504` |
+| S-2 tripwire and its in-test controls | `test/capture-kind-deferred.test.ts:217-290` |
+| Session-leak regression | `test/capture-teardown-leak.test.ts:56` |
+| T-K-1..4, T-P-1 (plan F lines 105-106; 12 tests, 11 assertion controls (they prove the assertion can fail; NOT database mutation controls)) | `test/capture-kind-trigger.test.ts` (2c) |
+| File route, unclassified PDF (raw 302) and classified control | `test/capture-file-route-unclassified.test.ts` (2c) |
+| makeDoc rebuilt (start -> file -> classify as the PM), `classifyAsPm`, `makeUnclassifiedDoc` | `test/helpers/capture-fixtures.ts` |
+Every refusal test is paired with a passing call in the same file (task 2e). ~~Not written: T-K-*, T-M-*, T-P-1 (plan F) and the D-30-shaped "engineer_declared" cases~~ [14 Nov: T-K-1..4 and T-P-1 written in 2c]. Still not written as tests: T-M-1, T-M-2 and the D-30-shaped clause of T-K-2. [14 Nov, block 2d: T-M-1 and T-M-2 are mapped to the rehearsal evidence, clause by clause, in the section "Block 2d"; the frozen-row clause is put to the reviewer there.]
+
+## S-2 tripwire: seven controls, each RED then restored (`step3-tripwire-controls.txt`)
+Planted file `supabase/migrations/999_planted_control.sql`, never committed; each run prints HEAD and the planted file's sha256 and `git status --porcelain` (empty) after removal. Controls 1 second inserting function, 2 forward INSERT without `received_at` (a later redefinition), 3 MERGE, 4 lowercase unqualified INSERT, 5 dynamic EXECUTE, 6 later DROP (zero sites): each exit 1, RED at the row "THE TRIPWIRE". Control 7 (DOWN files present, nothing planted): GREEN. The reason text per control is asserted by the in-test controls (always on in CI). Limit: the on-disk runs record the failing row, not its message.
+
+## Concurrency test (step 4): option A chosen
+Option A chosen by Aravind, 14 Nov. T-C-4 proves one delivery per document under real CI concurrency; it does not force the reverse order. Option C rejected (direct DB credential in CI). **Reviewer question: is A sufficient? If not, B becomes a blocker before the first beta tester.** Background, unchanged: CI has only the Supabase URL and keys, so no second connection can hold a document row lock; the one existing seam, `p_test_sleep_ms`, sleeps while holding the SESSION row lock (`052_mi_kind_deferred.sql:555-557`), not the document row. Option B (not built) would be a test-db-only SQL helper in `scripts/` that locks a fixture document row and sleeps: forces both orders, costs a new database object, a hand apply and an absence-on-prod probe. The rehearsal's 40 runs never showed the second-issued caller winning.
+
+## Session leak (step 5): RED then GREEN (`step5a-leak-RED.txt`, `step5b-leak-GREEN.txt`)
+RED on the old teardown: `leaked=1`. Fix in `test/helpers/capture-fixtures.ts` (`teardownCaptureKit`): sessions are deleted FIRST, by tenant and by phone, every later step runs even if one fails, failures are thrown together. GREEN: `leaked=0`. Read-only (5c): the 4 extra users in `zz-outbound-send` are 4 of 2,344 accreted by design: `mintOutboundEngineer` (`test/helpers/outbound-fixtures.ts`) mints per suite and `cleanupOutboundSends` (`:46-50`) deletes only `outbound_sends`, so no teardown owns the users. Unchanged by this block's runs (`c349-*.txt`).
+
+## Runs (raw summaries in the evidence directory)
+- Capture family, one process: **23 files, 533 passed, 7 skipped, 0 failed** (`step6a-familyA-capture.txt`). The 7 skips are the existing owner-only and CI-only skips.
+- pm-* family: **11 of 12 files green (508 passed); `pm-d30-shapes.test.tsx` RED** because `makeDocWithCaption` in `pm-fixtures.ts` still sends the retired kind turn. Excluded from this block by instruction (do not touch `pm-fixtures.ts` or the pm-* tests); plan S-A says to rebuild it (`step6b-familyC-pm.txt`).
+- Lint tests 42 passed. Static (`static-final.txt`): `tsc --noEmit` clean, eslint 0 errors (318 pre-existing warnings), file-size lint clean, fixture-literal lint clean, `lint:migrations` "clean. 107 known violation(s), all exempted."
+- #349 counts before and after the runs: IDENTICAL (12 / 18 auth users, 4 `ZZTestCapture-` users, 38 `zz-test-` tenants, 0 invoice-flow sessions): `c349-before-6a.txt`, `c349-after-6a.txt`.
+- PR-time mechanical control (S-A, `step6c-mechanical-control.txt`): 45 changed or removed test blocks, 37 FOUND, 8 MISSING; the 8 were added to the inventory with dated notes (T-D8-11 x3, T-STR-1/2, 3 setup-only edits); none is an unexpected meaning change. Inventory marks (131 rows): appended to `052-design/052-tests-changing-meaning.txt`. The marks on unchanged DIRECT rows are rule-based, not reviewed row by row.
+
+## Review items, all rounds
+| Item | Status | Evidence |
+|---|---|---|
+| Design r3 S-A (inventory, `makeDocWithCaption`) | DONE (2c): inventory regenerated and marked; `makeDocWithCaption` rebuilt on the real path; `pm-d30-shapes` RED then GREEN, 11 tests running | `b2c/step1-d30-RED.txt`, `b2c/step1-d30-GREEN.txt`, `b2c/step1-pm-fixtures.diff` |
+| Plan F T-K-1..4, T-P-1 | DONE (2c) | `b2c/step3-kind-trigger-GREEN.txt`, `b2c/step3-kind-trigger-controls.txt` |
+| Plan F T-M-1, T-M-2 | MAPPED to the 13 Nov test-db rehearsal (2d); one clause per test NOT COVERED on test-db | section "Block 2d" |
+| Plan F T-K-2 "D-30-shaped row frozen" | not testable after 052; put to the reviewer (2d) | section "Block 2d" |
+| S-B Rule 10 schema-aware, S-D bare names | done in block 1 (`2ca8c33`); 107 exempted | `static-final.txt` |
+| S-C, N-A, N-B, N-D | plan edits, landed (verification pass) | plan rev 8.1 |
+| N-C / SQL r1 S-2 tripwire | DONE | `step3-tripwire-controls.txt` |
+| Verification N-E (`seed`, `fakeKit`) | DONE | `capture-ingest.test.ts`, `capture-fixtures-clock.test.ts` |
+| SQL r1 S-1 lint entry guard, S-7 isolated controls | done in block 1 | `052-sql-evidence/` |
+| S-3, N-1 (A6 grants, strpos) | landed in the held file | `052-sql-review-package.md` |
+| S-4, S-5, N-2, N-5, lock hold, FOR UPDATE | done on test-db in 2a; S-5 also here as tests | `052-test-db-apply-record.md`, `capture-classify.test.ts:231` |
+| S-6 (DOWN header, rollback order) | landed in both DOWN headers | held-file diff `a122d30..beb0d21` |
+| N-3, N-4, rider on `delivery_id` | recorded | package addendum |
+| Answers 1-3 | tripwire as ruled; `delivery_id` kept (T-E-1 asserts present and NULL; no app read exists); FK entry accepted | this package |
+| Prod helper probe (`quoco_test_capture_insert` / `_update` IS NULL on prod) | OWED | none yet |
+
+## Differences from the plan, and open points
+1. `MI_ACK_QUESTION`: the block text differed from the plan; the plan text was ruled authoritative.
+2. ~~S-A: the plan orders `makeDocWithCaption` rebuilt; this block forbids touching `pm-fixtures.ts`. Result: `pm-d30-shapes` is red.~~ [14 Nov: resolved in 2c. The ban was lifted for that one function; it is rebuilt; `pm-d30-shapes` is GREEN, 11 tests.]
+3. The plan says "remove every app read of `delivery_id`": none existed.
+4. ~~Plan F lists T-K-*, T-M-*, T-P-1: not written here.~~ [14 Nov: T-K-1..4 and T-P-1 written in 2c. T-M-1, T-M-2 and the D-30-shaped clause are stopped: they need the migration to run, or a row no role can create.]
+5. A stray step-1 session re-asks with `MI_ASK_FILE` (the plan removes the step-1 re-ask; the RPC reports step 1), not `MI_FILE_REASK`.
+6. The leak fix and the T-LEAK test are in the tests commit, not a separate one.
+
+## Owed before prod apply
+~~S5 dark-control record~~ [14 Nov: moved BEFORE THE MERGE, see "Dark control: owed before merge (finding 1)"]; the external probe immediately before apply; the one-off frozen-row call on test-db (review answer 2); a verification pass on the 13 Nov rehearsal record (not yet done); the prod helper probe; prod md5 re-read with the prod ref printed; `to_regnamespace('private')` IS NULL on prod; the count of invoice-flow sessions on prod; Aravind's console confirmation that schema `private` is not exposed; Apply GO; the reviewer's answer on step 4 option A; T-M-1 / T-M-2 (need the migration to run, so they belong to the prod apply rehearsal record); Tamil for the two strings (English approved 14 Nov 2026).
+
+## Block 2c (14 Nov): steps 1 to 6, with evidence (`docs/reviews/052-code-evidence/b2c/`)
+1. **`makeDocWithCaption` rebuilt** (start -> file -> classify as the PM; only that function and one import changed; diff `step1-pm-fixtures.diff`). `pm-d30-shapes`: RED before (setup throws, 11 skipped: `step1-d30-RED.txt`), GREEN after (11 passed: `step1-d30-GREEN.txt`).
+2. **Unclassified PDF in the file route: NOT a bug.** The route reads the kind at `lib/capture/pm-file-access.ts:222-229` and a NULL kind gives the neutral name `file-<n>.<ext>` (`:131-135`, `resolveDownloadName` `:139`). Plan rev 8.1: "not covered" (no rule on the download name for a NULL kind). Test `test/capture-file-route-unclassified.test.ts`: the unclassified PDF returns **302** with `download=file-1.pdf`; the classified control returns 302 with `download=dc-1.pdf`; after classification the same file downloads as `dc-1.pdf`. Raw status and headers (token masked): `step2-file-route-unclassified.txt`. Route unchanged.
+3. **T-K-1..4 and T-P-1 written** (plan lines 105-106): 12 tests GREEN, then 11 assertion controls (they prove the assertion can fail; NOT database mutation controls) each turn exactly their own test RED (`step3-kind-trigger-controls.txt`; the database cannot be faulted from test code, so a control makes the guarded precondition legal). T-K-4 refusal observed as `QE015`. **Stopped:** T-M-1 ("seed a step-3 `invoice` session, apply: aborts with `APPLY_ABORT_052`") and T-M-2 ("backfill touches exactly the engineer-declared rows") need the migration to run, which a test cannot do on an applied database; the D-30-shaped clause of T-K-2 needs an `engineer_declared` row that no role can create after 052.
+4. **Tripwire controls re-run** (`step4-tripwire-controls.txt`): benign control (a `COMMENT ON` an unrelated table) GREEN; the six RED controls each print the assertion message and each names its planted fault (found 2 sites; no `received_at`; found 0 and no live definition); final run GREEN. Unfiltered on the clean tree: 13 tests, 13 passed, 0 skipped (`step4c-tripwire-unfiltered.txt`).
+5. **Leak control** (`step5-leak-control.txt`): RED with the old `teardownCaptureKit` from `0f87a02^` (helper sha256 `027230cd…`, `leaked=1`), GREEN with the current one (`91c33f5e…`, `leaked=0`); `git status` empty after the restore.
+6. **Step 4 decision:** option A, recorded above.
+Step 8 re-runs (capture family, pm-* family, lint tests, tsc, eslint, `lint:migrations`): `step8-*.txt`.
+
+## Block 2d (14 Nov): T-M-1, T-M-2, the frozen-row clause, the file route, and what is open for the reviewer
+Package edits only; no code, test or database work. File names below are under `docs/reviews/052-sql-evidence/` (local dry-run and test-db rehearsal) unless marked `b2c/`.
+
+**T-M-1.** Plan line 105: "T-M-1 seed a step-3 `invoice` session, apply: aborts with `APPLY_ABORT_052`, nothing changed; no session: succeeds."
+- Abort half, LOCAL dry-run only: `dryrun-r1-30-abort-invoice-session.txt:1-4` (`APPLY_ABORT_052: invoice sessions exist: 1`, `apply exit=3`), and the apply succeeds once the session is removed, `:14` (`apply exit=0`). **On test-db: NOT COVERED**: no seeded-session apply was run there. The 50 leaked sessions on test-db were caught by the pre-apply probe (`rehearsal-step1d-invoice-sessions.txt`), not by a migration abort.
+- "No session: succeeds", test-db: `rehearsal-step2-apply.txt:49` (0 invoice sessions) then `:66` (`apply exit 0`); applied a second time after the DOWN, `rehearsal-step6d-reapply.txt:66` (`apply exit 0`).
+- DOWN and md5 restore: refused over an unclassified document `rehearsal-step6a2-down-refused-unclassified.txt:157-158`; run, `rehearsal-step6c-down.txt:163` (`down exit 0`), md5s back to `cecc170b…`, `b5467b20…`, `4a7f4703…` at `:179-189`.
+- Prod half: verified at prod apply.
+
+**T-M-2.** Plan line 105: "T-M-2 backfill touches exactly the engineer-declared rows, each document's `received_at` equals its delivery's, and the provenance and order CHECKs then hold."
+- "Touches exactly the engineer-declared rows": the in-file A3 assertion (aborts on any row with a kind and no source) ran inside both test-db applies (exit 0, `rehearsal-step2-apply.txt:66`, `rehearsal-step6d-reapply.txt:66`); local, `dryrun-r1-20-legacy.txt:24`. **An explicit post-apply count of `engineer_declared` rows on test-db: NOT COVERED.**
+- "`received_at` equals its delivery's": local, `dryrun-r1-20-legacy.txt:29`; on test-db the in-file A3b assertion and copy ran (same exit 0) but **an explicit post-apply comparison is NOT COVERED.**
+- "CHECKs then hold": all four constraints validated true after the first apply, `rehearsal-step3-readback.txt:201-218`, and after the re-apply, `rehearsal-step6d-readback.txt:203-218`.
+- Prod half: verified at prod apply.
+
+**T-K-2 frozen-row clause. Reviewer: confirm acceptable.** Plan lines 105-106: "T-K-2 trigger: NULL -> all four once, `pm` only; ... `engineer_declared` by UPDATE refused; ... D-30-shaped row frozen; insert with any of the four -> QE012; service_role UPDATE 42501 ... T-P-1 existing PM actions refused before classification, working after." A D-30-shaped row is one with `kind_source = 'engineer_declared'` and NULL `kind_set_*`. After 052 no role can create one: an INSERT carrying any of the four kind columns is refused QE012 (insert trigger, A4b), an UPDATE to `engineer_declared` is refused QE009 (update trigger, A4), and `service_role` holds no table write grant (`capture_documents` is SELECT-only, `rehearsal-step3-readback.txt` table grants). Only the migration's own backfill, running as owner, writes it. Both refusals are tested (`test/capture-kind-trigger.test.ts`, T-K-2 rows, with controls). The 51 such rows on test-db are leaked fixtures, so no test depends on them. What covers the frozen behaviour: local dry-run `dryrun-r1-20-legacy.txt:24` (legacy rows read as `engineer_declared` with NULL stamps) and the QE009 refusals on a classified row, `dryrun-r1-13-main-exercise.txt:270,275`; plan A4/A5. SQL review round 1 has no numbered finding for it (only the credit paragraph on the trigger).
+
+**File route, unclassified PDF.** The owning PM opening a stored, not-previewable PDF of an UNCLASSIFIED document gets a **302** with `download=file-1.pdf` (existing behaviour, `lib/capture/pm-file-access.ts:131-135`, no new string); the classified control gets 302 with `dc-1.pdf`. Raw status and headers (token masked): `b2c/step2-file-route-unclassified.txt`. The plan has no rule for it ("not covered"); the route is unchanged.
+
+### Open for reviewer
+1. Is option A (T-C-4 as it is) sufficient for step 4? If not, B becomes a blocker before the first beta tester.
+2. The T-K and T-P-1 controls are test-level (the database cannot be faulted from test code), not faults in the database.
+3. T-K-2 frozen-row clause: confirm that the argument above, plus the local dry-run, is acceptable in place of a test.
+4. T-M-1 abort half and the two T-M-2 explicit checks have no test-db evidence; accept the local dry-run plus the in-file assertions, or ask for a test-db run at the prod rehearsal.
+5. The inventory marks on unchanged rows are rule-based, not reviewed row by row.
+6. ~~`MI_ASK_FILE` and `MI_ACK_QUESTION` are not yet approved.~~ [14 Nov: English approved per Aravind; Tamil still owed.]
+
+## Dark control: owed before merge (finding 1). ~~NOT DONE.~~ DONE 14 Nov, see `052-dark-control.md`.
+[14 Nov 2026] Dark control: owed before merge (finding 1): DONE. Per Aravind, the variable was removed, Production redeployed (deployment `BKQh9MwgHsWmgQ2hhWGpMXHFFkHz`) and his "4" got the dark reply. Record: `docs/reviews/052-dark-control.md`. The section below is the original ask, kept unedited.
+Review round 1 finding 1 (`052-code-review-round-1.md`): merge is deploy, so the record is owed before the merge, not before the apply. If the allowlist is still on, the new app runs against the 050 body: a "4" lands on step 1, the app asks for the file, 050 does not accept a file at step 1, the flow re-asks and closes. Nothing is written, but digit 4 is dead on that phone until the apply. This section was written read-only; no switch, env var or Vercel setting was touched.
+- **Plan R step 1, verbatim (`kind-removal-plan.md:115`; header `:113`):** "1. **Aravind**, before the merge, **evidence required before apply (S5)**: remove `CAPTURE_DIGIT4_TEST_PHONES` from Vercel production (listing or screenshot recorded); redeploy (deployment id and time recorded; the variable is read per request from `process.env`, `capture-switch.ts:26`, so only a redeploy changes it); then Aravind's allowlisted phone sends "4" and gets "That option isn't available yet. Nothing was recorded." (`inbound-start.ts:367`), the D-30 dark-control case (`d30-record.md:41`, E52b) repeated on that phone and recorded with its time."
+- **How the allowlist is set today:** an environment variable, `CAPTURE_DIGIT4_TEST_PHONES`, on the Vercel project (it is in no repo file). `lib/whatsapp/capture-switch.ts:26` reads `process.env.CAPTURE_DIGIT4_TEST_PHONES` on every call; `:16-21` parses it strictly (comma-separated E.164, any malformed entry gives an empty list); `:6` holds the constant `CAPTURE_DIGIT_4_LIVE = false`. The call sites are `inbound-start.ts:1137` (the start branch) and `:808`. **What makes it dark:** the constant is false AND the variable is unset, blank or malformed (`:17`, `:19`): the list is then empty, so `isCaptureDigit4Live` is false for every phone, and a "4" gets `item_reserved` (`inbound-start.ts:367`).
+- **The evidence the record needs, and how Aravind gets each piece** (screens or commands are suggestions; the Vercel CLI syntax was not run or verified here):
+  1. *The Vercel listing* showing `CAPTURE_DIGIT4_TEST_PHONES` absent from Production: the dashboard (Project, Settings, Environment Variables, filtered to Production) as a dated screenshot, or `vercel env ls production` pasted (it lists names, not values).
+  2. *The deployment id and time of the redeploy* made after the variable was removed: the dashboard (Deployments, the Production deployment, its `dpl_…` id and created time) or `vercel ls --prod` / `vercel inspect <url>`. The variable is read per request, so only a redeploy changes it.
+  3. *The "4" reply* from the previously allowlisted phone, with its time: a screenshot of the WhatsApp chat showing "That option isn't available yet. Nothing was recorded." and its timestamp.
+  4. Optional cross-check: the external probe (count of `whatsapp_sessions` with `current_flow = 'invoice'`) read-only on prod, which belongs to the apply step.
+  Attach all three to PR #355 before merging.
+
+## Block 2e (14 Nov): code review round 1 fixes (`052-code-review-round-1.md`, saved verbatim; evidence `docs/reviews/052-code-evidence/b2e/`)
+- **Findings 2, 3, 4 fixed, each with an assertion control (RED then GREEN, test-file sha256 printed before every run, `step123-controls.txt`).** 2: T-C-4 now races two different PM callers (`pm1` and `admMem`), asserts `kind_set_by` equals the caller that got `already_classified=false`, and the `[race-diag]` line carries both caller ids; control plants the loser's id, RED. 3: T-K-4 pins `QE015`; control plants `QE014`, RED. 4: T-P-1 asserts the unclassified document has 0 deliveries first; control counts a classified document, RED.
+- **Finding 8:** string comments updated (above), the "unchanged since" line added (Pins), controls renamed (test map), owed list updated.
+- **Review answers, recorded.** 1: option A sufficient; option B not a blocker (condition: finding 2, done). 2: frozen-row argument accepted for the reason that the freeze branch never reads `kind_source`; conditions: one recorded `quoco_test_capture_update` call on test-db against one of the 51 leaked rows setting `kind_set_by` and expecting QE009 (one-off evidence, owed before prod apply), and finding 5. 3: rule-based marks accepted (basis recorded in the inventory). 4: the controls prove the assertion can fail; they are not DB mutation controls.
+- **Deferred:** finding 5 (no fixture produces an `engineer_declared` row any more): rider on PR-D2, which must carry a render test on a literal row of that shape (NULL `kind_set_by` and `kind_set_at`). Finding 6 (a stray step-1 re-ask replies `MI_ASK_FILE`): accepted, as difference 5. Finding 7 (the tripwire does not watch grants): add a `GRANT ... ON ... capture_documents` matcher the next time `test/capture-kind-deferred.test.ts` is touched.
+- **Finding 1:** the dark-control record is owed before merge (section above); ~~not done~~ [14 Nov: DONE, `052-dark-control.md`].
+- **CI evidence** for the reviewed head: `b2e/ci-6634da3.json` (run 43552630965, head `6634da3`, status completed, conclusion success, all jobs including "Test (real test-db)"). **Owed before merge:** the T-C-4 `[race-diag]` lines from the CI run on the FINAL head, added to the evidence folder with its `headSha`.
+
+## Block 2f (14 Nov 2026): merge-gate evidence on head `09de1aa` (`docs/reviews/052-code-evidence/b2f/`)
+- [14 Nov] **Before-merge condition, CI run URL for `09de1aa` and the race-diag file: DONE.** Run 43561407757, https://github.com/ara-2789/Quoco/actions/runs/43561407757, `headSha` `09de1aa79a4b46dbab9a904c9ffc38fa82ceff21`, status completed, conclusion success; all jobs success except "Detect already-green PR head" (skipped); "Test (real test-db)" success. Files: `b2f/ci-09de1aa.json`, `b2f/ci-09de1aa-race-diag.txt` (88 lines, 24 of them T-C-4).
+- [14 Nov] **Dark control: owed before merge (finding 1): DONE.** `docs/reviews/052-dark-control.md`.
+- [14 Nov] **T-C-4, both orders occurred in CI.** Run 43561407757 shows winner `admMem` in rounds 0, 1, 2 and `pm1` in round 3 (`pm1` is callerA and `admMem` is callerB in every round, so callerB won three rounds and callerA won one). Verbatim `winner=` lines from `b2f/ci-09de1aa-race-diag.txt` (timestamp prefix trimmed):
+  - T-C-4-same round=0 callerA=pm1:3e68be56-a475-4dea-959b-ed4de1d3350b callerB=admMem:17d15ea3-1f16-4e06-a398-6e7c935c0539 winner=admMem:17d15ea3-1f16-4e06-a398-6e7c935c0539
+  - T-C-4-same round=1 callerA=pm1:3e68be56-a475-4dea-959b-ed4de1d3350b callerB=admMem:17d15ea3-1f16-4e06-a398-6e7c935c0539 winner=admMem:17d15ea3-1f16-4e06-a398-6e7c935c0539
+  - T-C-4-same round=2 callerA=pm1:3e68be56-a475-4dea-959b-ed4de1d3350b callerB=admMem:17d15ea3-1f16-4e06-a398-6e7c935c0539 winner=admMem:17d15ea3-1f16-4e06-a398-6e7c935c0539
+  - T-C-4-same round=3 callerA=pm1:3e68be56-a475-4dea-959b-ed4de1d3350b callerB=admMem:17d15ea3-1f16-4e06-a398-6e7c935c0539 winner=pm1:3e68be56-a475-4dea-959b-ed4de1d3350b
+  - T-C-4-diff round=0 callerA=pm1:3e68be56-a475-4dea-959b-ed4de1d3350b callerB=admMem:17d15ea3-1f16-4e06-a398-6e7c935c0539 winner=admMem:17d15ea3-1f16-4e06-a398-6e7c935c0539
+  - T-C-4-diff round=1 callerA=pm1:3e68be56-a475-4dea-959b-ed4de1d3350b callerB=admMem:17d15ea3-1f16-4e06-a398-6e7c935c0539 winner=admMem:17d15ea3-1f16-4e06-a398-6e7c935c0539
+  - T-C-4-diff round=2 callerA=pm1:3e68be56-a475-4dea-959b-ed4de1d3350b callerB=admMem:17d15ea3-1f16-4e06-a398-6e7c935c0539 winner=admMem:17d15ea3-1f16-4e06-a398-6e7c935c0539
+  - T-C-4-diff round=3 callerA=pm1:3e68be56-a475-4dea-959b-ed4de1d3350b callerB=admMem:17d15ea3-1f16-4e06-a398-6e7c935c0539 winner=pm1:3e68be56-a475-4dea-959b-ed4de1d3350b
+  Both winners occurred in one CI run. The tests do not force the interleaving (option A); this is observation of what happened, not proof of an ordering guarantee.
+- [14 Nov] **Local runs were at `64b465c`, not `09de1aa`.** `git diff --stat 64b465c 09de1aa`: 11 files changed, 1130 insertions, all under `docs/reviews/052-code-evidence/b2e/` (five `src/*.sh.txt` helper scripts, `step123-controls.txt`, `step4-strings-exact.txt`, `step7-familyA-capture.txt`, `step7-familyB-lint.txt`, `step7-familyC-pm.txt`, `step7-untouched-proof.txt`). `git diff --name-only 64b465c 09de1aa` outside `docs/reviews/`: 0 files. So no app, test, SQL or config file differs between the locally-run commit and the CI-certified head.
+

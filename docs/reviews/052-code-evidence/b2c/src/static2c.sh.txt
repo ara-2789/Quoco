@@ -1,0 +1,18 @@
+#!/bin/bash
+# static.sh <label> : tsc, eslint, file-size lint, fixture-literal lint, migration lint; raw summaries to ~/quoco-records/052-build/b2c/static-<label>.txt
+WT=<worktree>
+OUT=$HOME/quoco-records/052-build/b2c
+cd $WT
+F=$OUT/static-$1.txt
+{
+echo "timestamp(UTC): $(date -u +%FT%TZ)"
+echo "HEAD: $(git rev-parse HEAD)"
+echo "git status --porcelain: [$(git status --porcelain | tr '\n' ';')]"
+echo "---- tsc --noEmit"; npx tsc --noEmit 2>&1 | tail -15; echo "[tsc exit ${PIPESTATUS[0]}]"
+echo "---- eslint ."; npx eslint . 2>&1 | tail -25; echo "[eslint exit ${PIPESTATUS[0]}]"
+echo "---- npm run lint:filesize"; npm run lint:filesize 2>&1 | tail -4; echo "[lint:filesize exit ${PIPESTATUS[0]}]"
+echo "---- fixture-literal lint"; grep -n '"lint' package.json
+npm run lint:fixture-literals 2>&1 | tail -6; echo "[lint:fixture-literals exit ${PIPESTATUS[0]}]"
+echo "---- npm run lint:migrations"; npm run lint:migrations 2>&1 | tail -6; echo "[lint:migrations exit ${PIPESTATUS[0]}]"
+} > $F 2>&1
+cat $F | cut -c1-220

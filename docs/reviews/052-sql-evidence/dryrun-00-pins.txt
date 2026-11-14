@@ -1,0 +1,5 @@
+HEAD 75facad2e763783831cec2f657765bafa1ea5999
+git status --porcelain: []
+cb5ca25780ddd33be3e23fdea84f6164dbdd480d2f990a3a6c4383eac412ae5d  052_mi_kind_deferred.sql
+378d533c5e8ad800bfed967a28bf5cc4c823d063acd696b92af25376a33e2584  052-down-testdb.sql
+04da3bd4fb2dcfba903d60b29d92e006d9a97d852d9c9fef71a6f7d6c0c73fd4  schema.sql

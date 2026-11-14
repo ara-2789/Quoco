@@ -1,0 +1,17 @@
+#!/bin/bash
+# copy rehearsal evidence + sources into the repo (SCOPE: docs/reviews/052-sql-evidence/rehearsal-*), sanitising local paths
+. $HOME/.claude/jobs/2a6b4d65/tmp/lib.sh
+E=$WT/docs/reviews/052-sql-evidence
+SRC=$E/rehearsal-src
+mkdir -p $SRC
+san() { sed -e "s#<worktree>#<worktree>#g" -e "s#<main-checkout>#<main-checkout>#g" -e "s#<records>#<records>#g" -e "s#<home>/.claude/jobs/[0-9a-f]*/tmp#<job-tmp>#g" -e "s#<home>#<home>#g" "$1" > "$2"; }
+for g in $OUT/*.txt; do f=$(basename $g .txt); san $g $E/rehearsal-$f.txt; done
+# sources: scripts as .sh.txt / .cjs.txt, SQL as .sql.txt (so no linter treats evidence as code or as a migration)
+for g in $T/*.sh; do f=$(basename $g); san $g $SRC/$f.txt; done
+san $T/b2a.cjs $SRC/b2a.cjs.txt
+for f in $T/sql/*.sql; do b=$(basename $f); case $b in gen-*) continue;; esac; san $f $SRC/sql-$b.txt; done
+for f in lock-ctl-s1 lock-ctl2-s1 lock-test-s1 lock-s2 gen-sql4z gen-sql6b gen-sql5; do [ -f $T/sql/$f.sql ] && san $T/sql/$f.sql $SRC/sql-$f.sql.txt; done
+( cd $SRC && shasum -a 256 *.txt > SHA256.txt )
+echo "b2a.cjs executed-original sha256: $(shasum -a 256 $T/b2a.cjs | cut -d' ' -f1) (setup ran at 7b6025cb..., before 3 subcommands were appended; per-step files print the sha used)" > $SRC/README-rehearsal-src.txt
+echo "Copies are path-sanitised (<home>, <worktree> etc.); the executed originals lived in the job tmp dir. No secret is in any of them: URL and keys are read from the main checkout's gitignored .env.test at run time." >> $SRC/README-rehearsal-src.txt
+ls $E | grep -c '^rehearsal-'; ls $SRC | wc -l

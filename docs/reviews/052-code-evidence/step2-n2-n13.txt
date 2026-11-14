@@ -1,0 +1,38 @@
+timestamp(UTC): 2026-11-13T18:50:53Z
+HEAD: 99e594d5b66fe9bf9ef72db074fe7f0ea8c4fd70
+git status --porcelain: [ M test/capture-checkin-n2-n13.test.ts; M test/capture-engineer-flow.test.ts; M test/capture-handler.test.ts; M test/capture-ingest.test.ts; M test/capture-races.test.ts; M test/capture-router.test.ts; M test/capture-webhook.test.ts; M test/helpers/capture-fixtures.ts; M test/unit/capture-fixtures-clock.test.ts;?? test/capture-teardown-leak.test.ts;]
+project ref (SUPABASE_TEST_PROJECT_REF of .env.test): exfccwlrhoutkgrlikod  (the vitest guard aborts unless it is exfccwlrhoutkgrlikod)
+command: npx vitest run test/capture-checkin-n2-n13.test.ts
+
+ RUN  v3.2.7 <worktree>
+
+ ✓ test/capture-checkin-n2-n13.test.ts (21 tests) 47870ms
+   ✓ T-SESS-1 / T-N2-KEY: a scheduled start over a live invoice session > MORNING: outcome start, capture_discarded = true, check-in at step 1 with the morning guard, flow-owned keys gone, partial delivery survives "not acknowledged"  2675ms
+   ✓ T-SESS-1 / T-N2-KEY: a scheduled start over a live invoice session > EVENING: outcome start, capture_discarded = true, evening step 1 with the evening guard  2310ms
+   ✓ T-SESS-1 / T-N2-KEY: a scheduled start over a live invoice session > already_complete: the half is already submitted -> the session is cleared, no check-in starts, no guard, morning_submitted survives (subtract-only)  722ms
+   ✓ T-SESS-1 / T-N2-KEY: a scheduled start over a live invoice session > T-A27-4 a stale (expired) invoice row plus a scheduled start: the check-in starts normally, order does not matter  607ms
+   ✓ T-SESS-1 / T-N2-KEY: a scheduled start over a live invoice session > control: a start over a live HINDRANCE session still returns hindrance_discarded (the existing branch is unchanged)  534ms
+   ✓ T-N13: the FIRST non-empty step-1 message after an invoice discard is never taken as an answer > T-N13-2 MORNING first message "1" is deferred: reask + capture_deferred, no attendance, q1_reask not consumed, guard cleared, still step 1  2618ms
+   ✓ T-N13: the FIRST non-empty step-1 message after an invoice discard is never taken as an answer > T-N13-2 MORNING first message "2 bags short" is deferred: reask + capture_deferred, no attendance, q1_reask not consumed, guard cleared, still step 1  2510ms
+   ✓ T-N13: the FIRST non-empty step-1 message after an invoice discard is never taken as an answer > T-N13-2 MORNING first message "partial, cement not received" is deferred: reask + capture_deferred, no attendance, q1_reask not consumed, guard cleared, still step 1  2575ms
+   ✓ T-N13: the FIRST non-empty step-1 message after an invoice discard is never taken as an answer > T-N13-2 MORNING first message "some steel pending" is deferred: reask + capture_deferred, no attendance, q1_reask not consumed, guard cleared, still step 1  2386ms
+   ✓ T-N13: the FIRST non-empty step-1 message after an invoice discard is never taken as an answer > T-N13-1 EVENING first message "1" is deferred: reask + capture_deferred, daily_logs.evening_output NOT written, still step 1  2509ms
+   ✓ T-N13: the FIRST non-empty step-1 message after an invoice discard is never taken as an answer > T-N13-1 EVENING first message "2 bags short" is deferred: reask + capture_deferred, daily_logs.evening_output NOT written, still step 1  2225ms
+   ✓ T-N13: the FIRST non-empty step-1 message after an invoice discard is never taken as an answer > T-N13-1 EVENING first message "partial, cement not received" is deferred: reask + capture_deferred, daily_logs.evening_output NOT written, still step 1  2366ms
+   ✓ T-N13: the FIRST non-empty step-1 message after an invoice discard is never taken as an answer > T-N13-1 EVENING first message "some steel pending" is deferred: reask + capture_deferred, daily_logs.evening_output NOT written, still step 1  2268ms
+   ✓ T-N13: the FIRST non-empty step-1 message after an invoice discard is never taken as an answer > the SECOND message is handled normally (morning: attendance recorded; evening: evening_output written)  4606ms
+   ✓ T-N13: the FIRST non-empty step-1 message after an invoice discard is never taken as an answer > T-N13-3 after the deferral a bare 0 as the SECOND morning message still routes to not-on-site (step 5)  2050ms
+   ✓ T-N13: the FIRST non-empty step-1 message after an invoice discard is never taken as an answer > T-N13-4 scoping: a flag set by the MORNING check-in does not defer the evening step 1  836ms
+   ✓ T-N13: the FIRST non-empty step-1 message after an invoice discard is never taken as an answer > an EMPTY first message does not consume the deferral: the guard stays set until the first non-empty message  2235ms
+   ✓ A27 interactions with the other flows (SQL halves; the router half is PR-C) > T-A27-3 a stale invoice row blocks the hindrance start until expire_stale_material_inward clears it; then the hindrance flow STARTS  1129ms
+   ✓ A27 interactions with the other flows (SQL halves; the router half is PR-C) > A27 / N9 any other flow's turn over an invoice row REFRESHES its expiry (why the router must call expire_stale_material_inward first)  1122ms
+   ✓ A27 interactions with the other flows (SQL halves; the router half is PR-C) > T-A27-7 an idle morning / evening / hindrance session at 31 minutes is STILL ACTIVE (only the invoice flow has the 30-minute rule)  1922ms
+   ✓ A27 interactions with the other flows (SQL halves; the router half is PR-C) > T-A27-8 the IST-day rule still ends an invoice session at midnight: started 23:50, message 00:05 next day -> idle (not expired, not processed)  1150ms
+
+ Test Files  1 passed (1)
+      Tests  21 passed (21)
+   Start at  00:20:53
+   Duration  48.02s (transform 32ms, setup 0ms, collect 28ms, tests 47.87s, environment 0ms, prepare 18ms)
+
+[vitest exit 0]
+finished(UTC): 2026-11-13T18:51:41Z

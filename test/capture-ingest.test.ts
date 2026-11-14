@@ -86,7 +86,6 @@ const rowPath = (r: Pick<Row, 'tenant_id' | 'project_id' | 'document_id' | 'id'>
 async function seed(label: string, n: number): Promise<{ docId: string; payload: CaptureIngestJobPayload; rows: Row[] }> {
   const phone = kit.phone(label)
   await miTurn(kit, phone, '4', kit.sid(`${label}-s0`), { start: true })
-  await miTurn(kit, phone, '1', kit.sid(`${label}-s1`))
   const fileSid = kit.sid(`${label}-s2`)
   const media = Array.from({ length: n }, (_, i) => ({ index: i, content_type: 'image/jpeg', url: twilioUrl(label, i) }))
   const r = await miTurn(kit, phone, null, fileSid, { media })

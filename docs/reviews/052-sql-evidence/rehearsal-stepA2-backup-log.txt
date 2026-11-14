@@ -1,0 +1,3 @@
+$ cat supabase/.temp/project-ref  -> exfccwlrhoutkgrlikod
+Initialising login role...
+A2 exit 0

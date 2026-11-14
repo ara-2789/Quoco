@@ -1,0 +1,32 @@
+#!/bin/bash
+WT=<worktree>
+OUT=$HOME/quoco-records/052-build/b2c
+F=$OUT/step5-leak-control.txt
+H=test/helpers/capture-fixtures.ts
+cd $WT
+cp $H $OUT/.fixtures-current.bak
+git show 0f87a02^:$H > $OUT/.fixtures-old.tmp
+{
+echo "HEAD: $(git rev-parse HEAD)"
+echo "old teardown source: git show 0f87a02^:$H  (0f87a02^ = $(git rev-parse 0f87a02^))"
+echo
+echo "================ RED: OLD teardownCaptureKit (temp copy swapped in)"
+echo "sha256 of $H BEFORE the swap (current):  $(shasum -a 256 $H | cut -d' ' -f1)"
+cp $OUT/.fixtures-old.tmp $H
+echo "sha256 of $H DURING the RED run (old):   $(shasum -a 256 $H | cut -d' ' -f1)"
+npx vitest run test/capture-teardown-leak.test.ts > $OUT/.leak.tmp 2>&1; rc=$?
+grep -E "T-LEAK-1 invoice|Tests  |AssertionError" $OUT/.leak.tmp | cut -c1-220
+echo "exit $rc => $([ $rc -ne 0 ] && echo RED || echo GREEN)"
+cp $OUT/.fixtures-current.bak $H
+echo "restored; sha256 AFTER the restore:      $(shasum -a 256 $H | cut -d' ' -f1)"
+echo "git status --short AFTER restore: [$(git status --short | tr '\n' ';')]"
+echo
+echo "================ GREEN: CURRENT teardownCaptureKit"
+echo "sha256 of $H before the run:             $(shasum -a 256 $H | cut -d' ' -f1)"
+npx vitest run test/capture-teardown-leak.test.ts > $OUT/.leak.tmp 2>&1; rc=$?
+grep -E "T-LEAK-1 invoice|Tests  |AssertionError" $OUT/.leak.tmp | cut -c1-220
+echo "exit $rc => $([ $rc -ne 0 ] && echo RED || echo GREEN)"
+echo "git status --short AFTER: [$(git status --short | tr '\n' ';')]"
+} > $F 2>&1
+rm -f $OUT/.fixtures-old.tmp $OUT/.fixtures-current.bak $OUT/.leak.tmp
+cat $F | cut -c1-220

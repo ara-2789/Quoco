@@ -1,0 +1,6 @@
+SELECT now() AS db_now,
+       (SELECT max(updated_at) FROM public.whatsapp_sessions) AS newest_session_updated_at,
+       (SELECT max(created_at) FROM public.capture_documents) AS newest_document_created_at,
+       now() - (SELECT max(updated_at) FROM public.whatsapp_sessions) AS session_age_vs_now,
+       now() - (SELECT max(created_at) FROM public.capture_documents) AS document_age_vs_now,
+       (SELECT max(created_at) FROM public.jobs) AS newest_job_created_at;
