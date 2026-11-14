@@ -7,8 +7,8 @@
 //   file + prompt = MI_FILE_RECEIVED(n) + "\n" + <ack question | note prompt>
 //   re-asks       = MI_ACK_REASK + "\n" + <the same question>
 //
-// Every constant here is approved text EXCEPT MI_ASK_FILE and MI_ACK_QUESTION (migration 052, kind removal): those two
-// are accepted for the build only and are marked "Tamil owed, NOT approved"; final approval is at PR review. Do not
+// Every constant here is approved text. MI_ASK_FILE and MI_ACK_QUESTION (migration 052, kind removal): English approved
+// 14 Nov 2026 (per Aravind); Tamil owed. Do not
 // add a string without Aravind's approval (T-STR-2 fails on any exported MI_* / CHECKIN_* name outside the set).
 
 // Row 1. APPROVED 2026-10-26 (Aravind). Tamil owed.
@@ -21,7 +21,7 @@ export const MI_MENU_LINE = 'You can send a DC or invoice — reply 4.'
 // Rows 3-5 (MI_ASK_KIND, MI_ASK_FILE_DC, MI_ASK_FILE_INVOICE) are RETIRED by migration 052 (docs/reviews/052-design/
 // kind-removal-plan.md section D): the engineer no longer declares the kind; the PM sets it later.
 
-// Migration 052 (plan section D). Tamil owed, NOT approved. Accepted for the build only; final approval at PR review.
+// Migration 052 (plan section D). English approved 14 Nov 2026 (per Aravind); Tamil owed.
 // Replaces rows 4 and 5 (one text for a DC or an invoice; the engineer never says which).
 export const MI_ASK_FILE = 'Send one DC or invoice. A PDF, or photos of all its pages together.'
 
@@ -32,8 +32,8 @@ export function MI_FILE_RECEIVED(n: number): string {
 
 // Rows 7 and 8 (MI_ACK_QUESTION_DC, MI_ACK_QUESTION_INVOICE) are RETIRED by migration 052 (option B, plan section S).
 
-// Migration 052 (plan section D, option B). Tamil owed, NOT approved. Accepted for the build only; final approval at PR
-// review. One neutral question for both kinds; stored 1 -> yes, 2 -> no, 3 -> partial.
+// Migration 052 (plan section D, option B). English approved 14 Nov 2026 (per Aravind); Tamil owed.
+// One neutral question for both kinds; stored 1 -> yes, 2 -> no, 3 -> partial.
 export const MI_ACK_QUESTION =
   'Does the material at site match this document?\nReply 1 for matches\nReply 2 for does not match\nReply 3 for partly matches'
 

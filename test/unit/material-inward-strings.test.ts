@@ -49,7 +49,7 @@ const NEW_052 = {
     'Does the material at site match this document?\nReply 1 for matches\nReply 2 for does not match\nReply 3 for partly matches',
 }
 
-describe('052 new strings (NOT approved) are byte-exact', () => {
+describe('052 new strings (English approved 14 Nov 2026; Tamil owed) are byte-exact', () => {
   it('MI_ASK_FILE is exactly the plan text', () => {
     expect(MI_ASK_FILE).toBe(NEW_052.MI_ASK_FILE)
   })
