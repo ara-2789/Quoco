@@ -38,7 +38,7 @@
 | T-K-1..4, T-P-1 (plan F lines 105-106; 12 tests, 11 planted-fault controls) | `test/capture-kind-trigger.test.ts` (2c) |
 | File route, unclassified PDF (raw 302) and classified control | `test/capture-file-route-unclassified.test.ts` (2c) |
 | makeDoc rebuilt (start -> file -> classify as the PM), `classifyAsPm`, `makeUnclassifiedDoc` | `test/helpers/capture-fixtures.ts` |
-Every refusal test is paired with a passing call in the same file (task 2e). ~~Not written: T-K-*, T-M-*, T-P-1 (plan F) and the D-30-shaped "engineer_declared" cases~~ [14 Nov: T-K-1..4 and T-P-1 written in 2c]. Still not written, stopped with the plan quoted (section 2c): T-M-1, T-M-2 and the D-30-shaped clause of T-K-2.
+Every refusal test is paired with a passing call in the same file (task 2e). ~~Not written: T-K-*, T-M-*, T-P-1 (plan F) and the D-30-shaped "engineer_declared" cases~~ [14 Nov: T-K-1..4 and T-P-1 written in 2c]. Still not written as tests: T-M-1, T-M-2 and the D-30-shaped clause of T-K-2. [14 Nov, block 2d: T-M-1 and T-M-2 are mapped to the rehearsal evidence, clause by clause, in the section "Block 2d"; the frozen-row clause is put to the reviewer there.]
 
 ## S-2 tripwire: seven controls, each RED then restored (`step3-tripwire-controls.txt`)
 Planted file `supabase/migrations/999_planted_control.sql`, never committed; each run prints HEAD and the planted file's sha256 and `git status --porcelain` (empty) after removal. Controls 1 second inserting function, 2 forward INSERT without `received_at` (a later redefinition), 3 MERGE, 4 lowercase unqualified INSERT, 5 dynamic EXECUTE, 6 later DROP (zero sites): each exit 1, RED at the row "THE TRIPWIRE". Control 7 (DOWN files present, nothing planted): GREEN. The reason text per control is asserted by the in-test controls (always on in CI). Limit: the on-disk runs record the failing row, not its message.
@@ -61,7 +61,8 @@ RED on the old teardown: `leaked=1`. Fix in `test/helpers/capture-fixtures.ts` (
 |---|---|---|
 | Design r3 S-A (inventory, `makeDocWithCaption`) | DONE (2c): inventory regenerated and marked; `makeDocWithCaption` rebuilt on the real path; `pm-d30-shapes` RED then GREEN, 11 tests running | `b2c/step1-d30-RED.txt`, `b2c/step1-d30-GREEN.txt`, `b2c/step1-pm-fixtures.diff` |
 | Plan F T-K-1..4, T-P-1 | DONE (2c) | `b2c/step3-kind-trigger-GREEN.txt`, `b2c/step3-kind-trigger-controls.txt` |
-| Plan F T-M-1, T-M-2, T-K-2 "D-30-shaped row frozen" | STOPPED, plan quoted (section 2c) | none |
+| Plan F T-M-1, T-M-2 | MAPPED to the 13 Nov test-db rehearsal (2d); one clause per test NOT COVERED on test-db | section "Block 2d" |
+| Plan F T-K-2 "D-30-shaped row frozen" | not testable after 052; put to the reviewer (2d) | section "Block 2d" |
 | S-B Rule 10 schema-aware, S-D bare names | done in block 1 (`2ca8c33`); 107 exempted | `static-final.txt` |
 | S-C, N-A, N-B, N-D | plan edits, landed (verification pass) | plan rev 8.1 |
 | N-C / SQL r1 S-2 tripwire | DONE | `step3-tripwire-controls.txt` |
@@ -93,3 +94,30 @@ S5 dark-control record; the external probe immediately before apply; the prod he
 5. **Leak control** (`step5-leak-control.txt`): RED with the old `teardownCaptureKit` from `0f87a02^` (helper sha256 `027230cd…`, `leaked=1`), GREEN with the current one (`91c33f5e…`, `leaked=0`); `git status` empty after the restore.
 6. **Step 4 decision:** option A, recorded above.
 Step 8 re-runs (capture family, pm-* family, lint tests, tsc, eslint, `lint:migrations`): `step8-*.txt`.
+
+## Block 2d (14 Nov): T-M-1, T-M-2, the frozen-row clause, the file route, and what is open for the reviewer
+Package edits only; no code, test or database work. File names below are under `docs/reviews/052-sql-evidence/` (local dry-run and test-db rehearsal) unless marked `b2c/`.
+
+**T-M-1.** Plan line 105: "T-M-1 seed a step-3 `invoice` session, apply: aborts with `APPLY_ABORT_052`, nothing changed; no session: succeeds."
+- Abort half, LOCAL dry-run only: `dryrun-r1-30-abort-invoice-session.txt:1-4` (`APPLY_ABORT_052: invoice sessions exist: 1`, `apply exit=3`), and the apply succeeds once the session is removed, `:14` (`apply exit=0`). **On test-db: NOT COVERED**: no seeded-session apply was run there. The 50 leaked sessions on test-db were caught by the pre-apply probe (`rehearsal-step1d-invoice-sessions.txt`), not by a migration abort.
+- "No session: succeeds", test-db: `rehearsal-step2-apply.txt:49` (0 invoice sessions) then `:66` (`apply exit 0`); applied a second time after the DOWN, `rehearsal-step6d-reapply.txt:66` (`apply exit 0`).
+- DOWN and md5 restore: refused over an unclassified document `rehearsal-step6a2-down-refused-unclassified.txt:157-158`; run, `rehearsal-step6c-down.txt:163` (`down exit 0`), md5s back to `cecc170b…`, `b5467b20…`, `4a7f4703…` at `:179-189`.
+- Prod half: verified at prod apply.
+
+**T-M-2.** Plan line 105: "T-M-2 backfill touches exactly the engineer-declared rows, each document's `received_at` equals its delivery's, and the provenance and order CHECKs then hold."
+- "Touches exactly the engineer-declared rows": the in-file A3 assertion (aborts on any row with a kind and no source) ran inside both test-db applies (exit 0, `rehearsal-step2-apply.txt:66`, `rehearsal-step6d-reapply.txt:66`); local, `dryrun-r1-20-legacy.txt:24`. **An explicit post-apply count of `engineer_declared` rows on test-db: NOT COVERED.**
+- "`received_at` equals its delivery's": local, `dryrun-r1-20-legacy.txt:29`; on test-db the in-file A3b assertion and copy ran (same exit 0) but **an explicit post-apply comparison is NOT COVERED.**
+- "CHECKs then hold": all four constraints validated true after the first apply, `rehearsal-step3-readback.txt:201-218`, and after the re-apply, `rehearsal-step6d-readback.txt:203-218`.
+- Prod half: verified at prod apply.
+
+**T-K-2 frozen-row clause. Reviewer: confirm acceptable.** Plan lines 105-106: "T-K-2 trigger: NULL -> all four once, `pm` only; ... `engineer_declared` by UPDATE refused; ... D-30-shaped row frozen; insert with any of the four -> QE012; service_role UPDATE 42501 ... T-P-1 existing PM actions refused before classification, working after." A D-30-shaped row is one with `kind_source = 'engineer_declared'` and NULL `kind_set_*`. After 052 no role can create one: an INSERT carrying any of the four kind columns is refused QE012 (insert trigger, A4b), an UPDATE to `engineer_declared` is refused QE009 (update trigger, A4), and `service_role` holds no table write grant (`capture_documents` is SELECT-only, `rehearsal-step3-readback.txt` table grants). Only the migration's own backfill, running as owner, writes it. Both refusals are tested (`test/capture-kind-trigger.test.ts`, T-K-2 rows, with controls). The 51 such rows on test-db are leaked fixtures, so no test depends on them. What covers the frozen behaviour: local dry-run `dryrun-r1-20-legacy.txt:24` (legacy rows read as `engineer_declared` with NULL stamps) and the QE009 refusals on a classified row, `dryrun-r1-13-main-exercise.txt:270,275`; plan A4/A5. SQL review round 1 has no numbered finding for it (only the credit paragraph on the trigger).
+
+**File route, unclassified PDF.** The owning PM opening a stored, not-previewable PDF of an UNCLASSIFIED document gets a **302** with `download=file-1.pdf` (existing behaviour, `lib/capture/pm-file-access.ts:131-135`, no new string); the classified control gets 302 with `dc-1.pdf`. Raw status and headers (token masked): `b2c/step2-file-route-unclassified.txt`. The plan has no rule for it ("not covered"); the route is unchanged.
+
+### Open for reviewer
+1. Is option A (T-C-4 as it is) sufficient for step 4? If not, B becomes a blocker before the first beta tester.
+2. The T-K and T-P-1 controls are test-level (the database cannot be faulted from test code), not faults in the database.
+3. T-K-2 frozen-row clause: confirm that the argument above, plus the local dry-run, is acceptable in place of a test.
+4. T-M-1 abort half and the two T-M-2 explicit checks have no test-db evidence; accept the local dry-run plus the in-file assertions, or ask for a test-db run at the prod rehearsal.
+5. The inventory marks on unchanged rows are rule-based, not reviewed row by row.
+6. `MI_ASK_FILE` and `MI_ACK_QUESTION` are not yet approved ("Tamil owed, NOT approved").
