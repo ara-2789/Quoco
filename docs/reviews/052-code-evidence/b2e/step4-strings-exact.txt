@@ -1,0 +1,17 @@
+timestamp(UTC): 2026-11-14T04:55:24Z
+HEAD: 5ca0e34c77201ac73e9d5454308ffb82763b2743
+git status --porcelain: [ M lib/whatsapp/flows/material-inward-strings.ts; M test/unit/material-inward-strings.test.ts;]
+project ref (SUPABASE_TEST_PROJECT_REF of .env.test): exfccwlrhoutkgrlikod  (the vitest guard aborts unless it is exfccwlrhoutkgrlikod)
+command: npx vitest run test/unit/material-inward-strings.test.ts
+
+ RUN  v3.2.7 <worktree>
+
+ ✓ test/unit/material-inward-strings.test.ts (8 tests) 2ms
+
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Start at  10:25:24
+   Duration  120ms (transform 24ms, setup 0ms, collect 7ms, tests 2ms, environment 0ms, prepare 18ms)
+
+[vitest exit 0]
+finished(UTC): 2026-11-14T04:55:24Z

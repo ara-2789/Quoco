@@ -1,0 +1,87 @@
+
+================ T-C-4 GREEN baseline
+timestamp(UTC): 2026-11-14T04:52:08Z  HEAD: 30a9c2372b6e3a7754b6235d54d4c0c947a5efdb
+project ref (.env.test): exfccwlrhoutkgrlikod
+git status --short: [ M test/capture-kind-trigger.test.ts; M test/capture-races.test.ts;]
+sha256 test/capture-races.test.ts: cd2151ca99948c766b317d2ba1bcebdd2cc56fd750a51a4351250d3428cdf177   control: none
+[race-diag] T-C-4-same round=0 call=pm1 start=+0ms end=+285ms error=none
+[race-diag] T-C-4-same round=0 call=admMem start=+0ms end=+612ms error=none
+[race-diag] T-C-4-same round=0 callerA=pm1:9ede5842-7a98-4f03-a634-dde60eaf1189 callerB=admMem:31d5d5f8-ece7-463c-aefd-6e36b6dbc85d winner=pm1:9ede5842-7a98-4f03-a634-dde60eaf1189
+      Tests  1 passed | 11 skipped (12)
+exit 0 => GREEN
+
+================ T-C-4 RED: the wrong expected caller planted (the loser's id)
+timestamp(UTC): 2026-11-14T04:52:36Z  HEAD: 30a9c2372b6e3a7754b6235d54d4c0c947a5efdb
+project ref (.env.test): exfccwlrhoutkgrlikod
+git status --short: [ M test/capture-kind-trigger.test.ts; M test/capture-races.test.ts;]
+sha256 test/capture-races.test.ts: cd2151ca99948c766b317d2ba1bcebdd2cc56fd750a51a4351250d3428cdf177   control: TC4_CONTROL=wrongTC4_CONTROL
+[race-diag] T-C-4-same round=0 call=pm1 start=+0ms end=+274ms error=none
+[race-diag] T-C-4-same round=0 call=admMem start=+0ms end=+555ms error=none
+[race-diag] T-C-4-same round=0 callerA=pm1:64b95b68-65f7-480f-847e-06c071512ff3 callerB=admMem:681eddd8-cd56-4c2e-81f8-d9fcaa4670e4 winner=pm1:64b95b68-65f7-480f-847e-06c071512ff3
+     → expected '64b95b68-65f7-480f-847e-06c071512ff3' to be '681eddd8-cd56-4c2e-81f8-d9fcaa4670e4' // Object.is equality
+AssertionError: expected '64b95b68-65f7-480f-847e-06c071512ff3' to be '681eddd8-cd56-4c2e-81f8-d9fcaa4670e4' // Object.is equality
+exit 1 => RED
+
+================ T-C-4 GREEN restored
+timestamp(UTC): 2026-11-14T04:52:48Z  HEAD: 30a9c2372b6e3a7754b6235d54d4c0c947a5efdb
+project ref (.env.test): exfccwlrhoutkgrlikod
+git status --short: [ M test/capture-kind-trigger.test.ts; M test/capture-races.test.ts;]
+sha256 test/capture-races.test.ts: cd2151ca99948c766b317d2ba1bcebdd2cc56fd750a51a4351250d3428cdf177   control: none
+[race-diag] T-C-4-same round=0 call=pm1 start=+0ms end=+307ms error=none
+[race-diag] T-C-4-same round=0 call=admMem start=+0ms end=+583ms error=none
+[race-diag] T-C-4-same round=0 callerA=pm1:da462060-63c8-427f-9f5c-246fdf2151ca callerB=admMem:4b807596-f875-42df-8bff-1400aa5d1097 winner=pm1:da462060-63c8-427f-9f5c-246fdf2151ca
+      Tests  1 passed | 11 skipped (12)
+exit 0 => GREEN
+
+================ T-K-4 GREEN baseline
+timestamp(UTC): 2026-11-14T04:53:16Z  HEAD: 30a9c2372b6e3a7754b6235d54d4c0c947a5efdb
+project ref (.env.test): exfccwlrhoutkgrlikod
+git status --short: [ M test/capture-kind-trigger.test.ts; M test/capture-races.test.ts;]
+sha256 test/capture-kind-trigger.test.ts: 65caab5b230db35db771fb5368401562e08f88640552991f51fcadd66427e012   control: none
+      Tests  2 passed | 10 skipped (12)
+exit 0 => GREEN
+
+================ T-K-4 RED: QE014 planted as the expected code
+timestamp(UTC): 2026-11-14T04:53:34Z  HEAD: 30a9c2372b6e3a7754b6235d54d4c0c947a5efdb
+project ref (.env.test): exfccwlrhoutkgrlikod
+git status --short: [ M test/capture-kind-trigger.test.ts; M test/capture-races.test.ts;]
+sha256 test/capture-kind-trigger.test.ts: 65caab5b230db35db771fb5368401562e08f88640552991f51fcadd66427e012   control: TK_CONTROL=k4codeTK_CONTROL
+     → refused before classification: expected 'QE015' to be 'QE014' // Object.is equality
+AssertionError: refused before classification: expected 'QE015' to be 'QE014' // Object.is equality
+    169|     // Control k4code: QE014 is planted as the expected code, which mu…
+      Tests  1 failed | 1 passed | 10 skipped (12)
+exit 1 => RED
+
+================ T-K-4 GREEN restored
+timestamp(UTC): 2026-11-14T04:53:51Z  HEAD: 30a9c2372b6e3a7754b6235d54d4c0c947a5efdb
+project ref (.env.test): exfccwlrhoutkgrlikod
+git status --short: [ M test/capture-kind-trigger.test.ts; M test/capture-races.test.ts;]
+sha256 test/capture-kind-trigger.test.ts: 65caab5b230db35db771fb5368401562e08f88640552991f51fcadd66427e012   control: none
+      Tests  2 passed | 10 skipped (12)
+exit 0 => GREEN
+
+================ T-P-1 GREEN baseline
+timestamp(UTC): 2026-11-14T04:54:09Z  HEAD: 30a9c2372b6e3a7754b6235d54d4c0c947a5efdb
+project ref (.env.test): exfccwlrhoutkgrlikod
+git status --short: [ M test/capture-kind-trigger.test.ts; M test/capture-races.test.ts;]
+sha256 test/capture-kind-trigger.test.ts: 65caab5b230db35db771fb5368401562e08f88640552991f51fcadd66427e012   control: none
+      Tests  2 passed | 10 skipped (12)
+exit 0 => GREEN
+
+================ T-P-1 RED: the before-count pointed at a classified document
+timestamp(UTC): 2026-11-14T04:54:28Z  HEAD: 30a9c2372b6e3a7754b6235d54d4c0c947a5efdb
+project ref (.env.test): exfccwlrhoutkgrlikod
+git status --short: [ M test/capture-kind-trigger.test.ts; M test/capture-races.test.ts;]
+sha256 test/capture-kind-trigger.test.ts: 65caab5b230db35db771fb5368401562e08f88640552991f51fcadd66427e012   control: TK_CONTROL=p1beforeTK_CONTROL
+     → the unclassified document has no delivery: expected [ Array(1) ] to have a length of +0 but got 1
+AssertionError: the unclassified document has no delivery: expected [ Array(1) ] to have a length of +0 but got 1
+      Tests  1 failed | 1 passed | 10 skipped (12)
+exit 1 => RED
+
+================ T-P-1 GREEN restored
+timestamp(UTC): 2026-11-14T04:54:47Z  HEAD: 30a9c2372b6e3a7754b6235d54d4c0c947a5efdb
+project ref (.env.test): exfccwlrhoutkgrlikod
+git status --short: [ M test/capture-kind-trigger.test.ts; M test/capture-races.test.ts;]
+sha256 test/capture-kind-trigger.test.ts: 65caab5b230db35db771fb5368401562e08f88640552991f51fcadd66427e012   control: none
+      Tests  2 passed | 10 skipped (12)
+exit 0 => GREEN

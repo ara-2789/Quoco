@@ -1,0 +1,21 @@
+timestamp(UTC): 2026-11-14T04:56:45Z
+HEAD: 64b465ca3acff5fe7f4e309c706277a953bbe6c0
+git status --porcelain: []
+base: 6634da338e90f2bdb5a3f5d7701525870c39d2ff
+--- block 2e do-not-touch paths (nothing printed = EMPTY diff against the base):
+[end of do-not-touch list]
+--- every path changed since the base (the slice: test files, the strings file, package, inventory, review file, evidence):
+docs/reviews/052-code-evidence/b2e/ci-6634da3.json
+docs/reviews/052-code-review-package.md
+docs/reviews/052-code-review-round-1.md
+docs/reviews/052-design/052-tests-changing-meaning.txt
+lib/whatsapp/flows/material-inward-strings.ts
+test/capture-kind-trigger.test.ts
+test/capture-races.test.ts
+test/unit/material-inward-strings.test.ts
+--- sha256 of the held file and both DOWNs:
+2c4ee3bca72fc6f89ec37821594de565490bf65740be701470d5e8789586357e  docs/reviews/052_mi_kind_deferred.sql
+bb21dfe0b7c358c1c36a95a3cc17d457526e9d3dd0e7580da915182cb530907f  docs/reviews/052-down-testdb.sql
+344f4b2e5a1fe42c0502a63a47feee9e3980e830adbc2d03a9288610991cc43a  docs/reviews/052-down-prod.sql
+--- string values unchanged: git diff of the strings file shows comment lines only:
+[nothing above = every changed line in the strings file is a comment]
