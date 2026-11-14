@@ -1,0 +1,409 @@
+ref: jvxwqignooseazzmwhvl
+
+## three function md5s: EQUAL
+SQL: SELECT p.proname, count(*) AS n, string_agg(md5(pg_get_functiondef(p.oid)), ',') AS md5
+FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace
+ AND p.proname IN ('apply_material_inward_turn','trg_capture_documents_before_insert','trg_capture_documents_before_update')
+GROUP BY p.proname ORDER BY p.proname;
+-- PROD rows:
+[
+ {
+  "md5": "e32797b63fee8fceca1934be700609c3",
+  "n": 1,
+  "proname": "apply_material_inward_turn"
+ },
+ {
+  "md5": "4f83a28f16956ebae830361c4f898899",
+  "n": 1,
+  "proname": "trg_capture_documents_before_insert"
+ },
+ {
+  "md5": "cfcd59258a5039acc395dd8136328ca5",
+  "n": 1,
+  "proname": "trg_capture_documents_before_update"
+ }
+]
+-- TEST-DB rows (from rehearsal-step3-readback.txt):
+[
+ {
+  "md5": "e32797b63fee8fceca1934be700609c3",
+  "n": 1,
+  "proname": "apply_material_inward_turn"
+ },
+ {
+  "md5": "4f83a28f16956ebae830361c4f898899",
+  "n": 1,
+  "proname": "trg_capture_documents_before_insert"
+ },
+ {
+  "md5": "cfcd59258a5039acc395dd8136328ca5",
+  "n": 1,
+  "proname": "trg_capture_documents_before_update"
+ }
+]
+
+## new functions (schema, owner, secdef, search_path, ACL): EQUAL
+SQL: SELECT n.nspname AS schema, p.proname, pg_get_userbyid(p.proowner) AS owner, p.prosecdef AS security_definer, p.proconfig::text AS config, coalesce(p.proacl::text,'NULL') AS acl
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+ WHERE p.proname IN ('pm_classify_document','capture_apply_classification') ORDER BY 1,2;
+-- PROD rows:
+[
+ {
+  "acl": "{postgres=X/postgres}",
+  "config": "{\"search_path=\\\"\\\"\"}",
+  "owner": "postgres",
+  "proname": "capture_apply_classification",
+  "schema": "private",
+  "security_definer": true
+ },
+ {
+  "acl": "{postgres=X/postgres,authenticated=X/postgres}",
+  "config": "{\"search_path=\\\"\\\"\"}",
+  "owner": "postgres",
+  "proname": "pm_classify_document",
+  "schema": "public",
+  "security_definer": true
+ }
+]
+-- TEST-DB rows (from rehearsal-step3-readback.txt):
+[
+ {
+  "acl": "{postgres=X/postgres}",
+  "config": "{\"search_path=\\\"\\\"\"}",
+  "owner": "postgres",
+  "proname": "capture_apply_classification",
+  "schema": "private",
+  "security_definer": true
+ },
+ {
+  "acl": "{postgres=X/postgres,authenticated=X/postgres}",
+  "config": "{\"search_path=\\\"\\\"\"}",
+  "owner": "postgres",
+  "proname": "pm_classify_document",
+  "schema": "public",
+  "security_definer": true
+ }
+]
+
+## EXECUTE matrix: EQUAL
+SQL: SELECT p.oid::regprocedure::text AS fn, has_function_privilege('anon',p.oid,'EXECUTE') AS anon, has_function_privilege('authenticated',p.oid,'EXECUTE') AS authenticated, has_function_privilege('service_role',p.oid,'EXECUTE') AS service_role
+  FROM pg_proc p WHERE p.proname IN ('pm_classify_document','capture_apply_classification','apply_material_inward_turn','trg_capture_documents_before_insert','trg_capture_documents_before_update') ORDER BY 1;
+-- PROD rows:
+[
+ {
+  "anon": false,
+  "authenticated": false,
+  "fn": "apply_material_inward_turn(text,uuid,uuid,uuid,text,text,jsonb,boolean,timestamp with time zone,integer)",
+  "service_role": true
+ },
+ {
+  "anon": false,
+  "authenticated": true,
+  "fn": "pm_classify_document(uuid,text)",
+  "service_role": false
+ },
+ {
+  "anon": false,
+  "authenticated": false,
+  "fn": "private.capture_apply_classification(uuid,text,uuid)",
+  "service_role": false
+ },
+ {
+  "anon": false,
+  "authenticated": false,
+  "fn": "trg_capture_documents_before_insert()",
+  "service_role": false
+ },
+ {
+  "anon": false,
+  "authenticated": false,
+  "fn": "trg_capture_documents_before_update()",
+  "service_role": false
+ }
+]
+-- TEST-DB rows (from rehearsal-step3-readback.txt):
+[
+ {
+  "anon": false,
+  "authenticated": false,
+  "fn": "apply_material_inward_turn(text,uuid,uuid,uuid,text,text,jsonb,boolean,timestamp with time zone,integer)",
+  "service_role": true
+ },
+ {
+  "anon": false,
+  "authenticated": true,
+  "fn": "pm_classify_document(uuid,text)",
+  "service_role": false
+ },
+ {
+  "anon": false,
+  "authenticated": false,
+  "fn": "private.capture_apply_classification(uuid,text,uuid)",
+  "service_role": false
+ },
+ {
+  "anon": false,
+  "authenticated": false,
+  "fn": "trg_capture_documents_before_insert()",
+  "service_role": false
+ },
+ {
+  "anon": false,
+  "authenticated": false,
+  "fn": "trg_capture_documents_before_update()",
+  "service_role": false
+ }
+]
+
+## schema private privileges: EQUAL
+SQL: SELECT r AS role, has_schema_privilege(r,'private','USAGE') AS usage, has_schema_privilege(r,'private','CREATE') AS "create", (SELECT coalesce(nspacl::text,'NULL') FROM pg_namespace WHERE nspname='private') AS private_nspacl
+  FROM unnest(array['anon','authenticated','service_role']) r;
+-- PROD rows:
+[
+ {
+  "create": false,
+  "private_nspacl": "{postgres=UC/postgres}",
+  "role": "anon",
+  "usage": false
+ },
+ {
+  "create": false,
+  "private_nspacl": "{postgres=UC/postgres}",
+  "role": "authenticated",
+  "usage": false
+ },
+ {
+  "create": false,
+  "private_nspacl": "{postgres=UC/postgres}",
+  "role": "service_role",
+  "usage": false
+ }
+]
+-- TEST-DB rows (from rehearsal-step3-readback.txt):
+[
+ {
+  "create": false,
+  "private_nspacl": "{postgres=UC/postgres}",
+  "role": "anon",
+  "usage": false
+ },
+ {
+  "create": false,
+  "private_nspacl": "{postgres=UC/postgres}",
+  "role": "authenticated",
+  "usage": false
+ },
+ {
+  "create": false,
+  "private_nspacl": "{postgres=UC/postgres}",
+  "role": "service_role",
+  "usage": false
+ }
+]
+
+## capture_documents columns: EQUAL
+SQL: SELECT attname, format_type(atttypid,atttypmod) AS type, attnotnull AS not_null, atthasdef AS has_default FROM pg_attribute
+ WHERE attrelid='public.capture_documents'::regclass AND NOT attisdropped AND attname IN ('kind','kind_source','kind_set_at','kind_set_by','received_at') ORDER BY attname;
+-- PROD rows:
+[
+ {
+  "attname": "kind",
+  "has_default": false,
+  "not_null": false,
+  "type": "text"
+ },
+ {
+  "attname": "kind_set_at",
+  "has_default": false,
+  "not_null": false,
+  "type": "timestamp with time zone"
+ },
+ {
+  "attname": "kind_set_by",
+  "has_default": false,
+  "not_null": false,
+  "type": "uuid"
+ },
+ {
+  "attname": "kind_source",
+  "has_default": false,
+  "not_null": false,
+  "type": "text"
+ },
+ {
+  "attname": "received_at",
+  "has_default": false,
+  "not_null": true,
+  "type": "timestamp with time zone"
+ }
+]
+-- TEST-DB rows (from rehearsal-step3-readback.txt):
+[
+ {
+  "attname": "kind",
+  "has_default": false,
+  "not_null": false,
+  "type": "text"
+ },
+ {
+  "attname": "kind_set_at",
+  "has_default": false,
+  "not_null": false,
+  "type": "timestamp with time zone"
+ },
+ {
+  "attname": "kind_set_by",
+  "has_default": false,
+  "not_null": false,
+  "type": "uuid"
+ },
+ {
+  "attname": "kind_source",
+  "has_default": false,
+  "not_null": false,
+  "type": "text"
+ },
+ {
+  "attname": "received_at",
+  "has_default": false,
+  "not_null": true,
+  "type": "timestamp with time zone"
+ }
+]
+
+## capture_documents 052 constraints: EQUAL
+SQL: SELECT conname, convalidated AS validated, pg_get_constraintdef(oid) AS def FROM pg_constraint
+ WHERE conrelid='public.capture_documents'::regclass AND conname IN ('capture_documents_kind_provenance_chk','capture_documents_kind_set_order_chk','capture_documents_received_order_chk','capture_documents_kind_set_by_fk') ORDER BY conname;
+-- PROD rows:
+[
+ {
+  "conname": "capture_documents_kind_provenance_chk",
+  "def": "CHECK ((((kind IS NULL) AND (kind_source IS NULL) AND (kind_set_at IS NULL) AND (kind_set_by IS NULL)) OR ((kind IS NOT NULL) AND (kind_source = 'pm'::text) AND (kind_set_at IS NOT NULL) AND (kind_set_by IS NOT NULL)) OR ((kind IS NOT NULL) AND (kind_source = 'engineer_declared'::text) AND (kind_set_at IS NULL) AND (kind_set_by IS NULL))))",
+  "validated": true
+ },
+ {
+  "conname": "capture_documents_kind_set_by_fk",
+  "def": "FOREIGN KEY (kind_set_by, tenant_id) REFERENCES users(id, tenant_id) ON UPDATE RESTRICT ON DELETE RESTRICT",
+  "validated": true
+ },
+ {
+  "conname": "capture_documents_kind_set_order_chk",
+  "def": "CHECK (((kind_set_at IS NULL) OR (kind_set_at >= created_at)))",
+  "validated": true
+ },
+ {
+  "conname": "capture_documents_received_order_chk",
+  "def": "CHECK ((received_at <= created_at))",
+  "validated": true
+ }
+]
+-- TEST-DB rows (from rehearsal-step3-readback.txt):
+[
+ {
+  "conname": "capture_documents_kind_provenance_chk",
+  "def": "CHECK ((((kind IS NULL) AND (kind_source IS NULL) AND (kind_set_at IS NULL) AND (kind_set_by IS NULL)) OR ((kind IS NOT NULL) AND (kind_source = 'pm'::text) AND (kind_set_at IS NOT NULL) AND (kind_set_by IS NOT NULL)) OR ((kind IS NOT NULL) AND (kind_source = 'engineer_declared'::text) AND (kind_set_at IS NULL) AND (kind_set_by IS NULL))))",
+  "validated": true
+ },
+ {
+  "conname": "capture_documents_kind_set_by_fk",
+  "def": "FOREIGN KEY (kind_set_by, tenant_id) REFERENCES users(id, tenant_id) ON UPDATE RESTRICT ON DELETE RESTRICT",
+  "validated": true
+ },
+ {
+  "conname": "capture_documents_kind_set_order_chk",
+  "def": "CHECK (((kind_set_at IS NULL) OR (kind_set_at >= created_at)))",
+  "validated": true
+ },
+ {
+  "conname": "capture_documents_received_order_chk",
+  "def": "CHECK ((received_at <= created_at))",
+  "validated": true
+ }
+]
+
+## capture_documents table grants per role: EQUAL
+SQL: SELECT r AS role, string_agg(pr, ',' ORDER BY pr) FILTER (WHERE has_table_privilege(r,'public.capture_documents',pr)) AS table_privileges_on_capture_documents,
+       (SELECT coalesce(relacl::text,'NULL') FROM pg_class WHERE oid='public.capture_documents'::regclass) AS relacl
+  FROM unnest(array['anon','authenticated','service_role']) r CROSS JOIN unnest(array['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER']) pr GROUP BY r ORDER BY r;
+-- PROD rows:
+[
+ {
+  "relacl": "{postgres=arwdDxtm/postgres,authenticated=r/postgres,service_role=r/postgres}",
+  "role": "anon",
+  "table_privileges_on_capture_documents": null
+ },
+ {
+  "relacl": "{postgres=arwdDxtm/postgres,authenticated=r/postgres,service_role=r/postgres}",
+  "role": "authenticated",
+  "table_privileges_on_capture_documents": "SELECT"
+ },
+ {
+  "relacl": "{postgres=arwdDxtm/postgres,authenticated=r/postgres,service_role=r/postgres}",
+  "role": "service_role",
+  "table_privileges_on_capture_documents": "SELECT"
+ }
+]
+-- TEST-DB rows (from rehearsal-step3-readback.txt):
+[
+ {
+  "relacl": "{postgres=arwdDxtm/postgres,authenticated=r/postgres,service_role=r/postgres}",
+  "role": "anon",
+  "table_privileges_on_capture_documents": null
+ },
+ {
+  "relacl": "{postgres=arwdDxtm/postgres,authenticated=r/postgres,service_role=r/postgres}",
+  "role": "authenticated",
+  "table_privileges_on_capture_documents": "SELECT"
+ },
+ {
+  "relacl": "{postgres=arwdDxtm/postgres,authenticated=r/postgres,service_role=r/postgres}",
+  "role": "service_role",
+  "table_privileges_on_capture_documents": "SELECT"
+ }
+]
+
+## schema fingerprint: EQUAL
+SQL: SELECT md5(concat_ws('|',
+  (SELECT coalesce(string_agg(pg_get_functiondef(p.oid), '' ORDER BY p.proname), '-') FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('apply_material_inward_turn','trg_capture_documents_before_insert','trg_capture_documents_before_update')),
+  (SELECT coalesce(string_agg(p.proname || ':' || coalesce(p.proacl::text,'-') || ':' || p.prosecdef::text || ':' || coalesce(p.proconfig::text,'-') || ':' || pg_get_userbyid(p.proowner), ',' ORDER BY n.nspname, p.proname), '-') FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE (n.nspname = 'public' AND p.proname IN ('apply_material_inward_turn','trg_capture_documents_before_insert','trg_capture_documents_before_update','pm_classify_document')) OR p.proname = 'capture_apply_classification'),
+  (SELECT coalesce(string_agg(pg_get_triggerdef(g.oid), ';' ORDER BY g.tgname), '-') FROM pg_trigger g WHERE g.tgrelid = 'public.capture_documents'::regclass AND NOT g.tgisinternal),
+  (SELECT coalesce(relacl::text,'-') FROM pg_class WHERE oid = 'public.capture_documents'::regclass),
+  (SELECT coalesce(string_agg(attname || ':' || attacl::text, ',' ORDER BY attname), '-') FROM pg_attribute WHERE attrelid = 'public.capture_documents'::regclass AND attacl IS NOT NULL),
+  (SELECT coalesce(string_agg(conname || ':' || pg_get_constraintdef(oid) || ':' || convalidated::text, ';' ORDER BY conname), '-') FROM pg_constraint WHERE conrelid = 'public.capture_documents'::regclass),
+  (SELECT coalesce(string_agg(attname || ':' || format_type(atttypid, atttypmod) || ':' || attnotnull::text || ':' || atthasdef::text, ',' ORDER BY attname), '-') FROM pg_attribute WHERE attrelid = 'public.capture_documents'::regclass AND attnum > 0 AND NOT attisdropped),
+  (SELECT coalesce(string_agg(nspname || ':' || coalesce(nspacl::text,'-'), ',' ORDER BY nspname), '-') FROM pg_namespace WHERE nspname IN ('private','public')),
+  (SELECT count(*)::text FROM pg_proc WHERE proname IN ('pm_classify_document','capture_apply_classification'))
+)) AS schema_fingerprint_052;
+-- PROD rows:
+[
+ {
+  "schema_fingerprint_052": "6c69c545704f5d72dc776a55863feca9"
+ }
+]
+-- TEST-DB rows (from rehearsal-step3-readback.txt):
+[
+ {
+  "schema_fingerprint_052": "6c69c545704f5d72dc776a55863feca9"
+ }
+]
+
+## comments hash: EQUAL
+SQL: SELECT md5(concat_ws('|',
+  coalesce(obj_description('public.capture_documents'::regclass, 'pg_class'), '-'),
+  (SELECT coalesce(string_agg(a.attname || '=' || coalesce(col_description(a.attrelid, a.attnum), '-'), ',' ORDER BY a.attname), '-') FROM pg_attribute a WHERE a.attrelid = 'public.capture_documents'::regclass AND a.attnum > 0 AND NOT a.attisdropped),
+  (SELECT coalesce(string_agg(p.proname || '=' || coalesce(obj_description(p.oid, 'pg_proc'), '-'), ',' ORDER BY p.proname), '-') FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('apply_material_inward_turn','trg_capture_documents_before_insert','trg_capture_documents_before_update','pm_classify_document'))
+)) AS comments_hash_052;
+-- PROD rows:
+[
+ {
+  "comments_hash_052": "7505c3a44984815b55b2566919106502"
+ }
+]
+-- TEST-DB rows (from rehearsal-step3-readback.txt):
+[
+ {
+  "comments_hash_052": "7505c3a44984815b55b2566919106502"
+ }
+]
+
+OVERALL: ALL EQUAL

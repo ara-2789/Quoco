@@ -1,0 +1,32 @@
+ref: exfccwlrhoutkgrlikod  HEAD 8e90cb5  2026-11-14T07:10:53Z
+== BEFORE
+>>> SELECT id, kind, kind_source, kind_set_by, kind_set_at, received_at FROM public.capture_documents WHERE id='e309000e-5479-43d8-9df3-04a4512afa30';
+{
+  "rows": [
+    {
+      "id": "e309000e-5479-43d8-9df3-04a4512afa30",
+      "kind": "dc",
+      "kind_set_at": null,
+      "kind_set_by": null,
+      "kind_source": "engineer_declared",
+      "received_at": "2026-10-30 13:48:38.145042+00"
+    }
+  ],
+}
+== CALL
+>>> SELECT public.quoco_test_capture_update('capture_documents', 'e309000e-5479-43d8-9df3-04a4512afa30'::uuid, jsonb_build_object('kind_set_by', (SELECT id FROM public.users LIMIT 1)));
+{"_tag":"Error","error":{"code":"LegacyDbQueryUnexpectedStatusError","message":"unexpected status 400: {\"message\":\"Failed to run sql query: ERROR:  QE009: E9\\nCONTEXT:  PL/pgSQL function public.trg_capture_documents_before_update() line 26 at RAISE\\nSQL statement \\\"UPDATE public.capture_documents SET kind_set_by = (jsonb_populate_record(NULL::public.capture_documents, $2)).kind_set_by WHERE id = $1 RETURNING to_jsonb(capture_documents)\\\"\\nPL/pgSQL function public.quoco_test_capture_update(text,uuid,jsonb) line 19 at EXECUTE\\n\"}"}}
+== AFTER
+>>> SELECT id, kind, kind_source, kind_set_by, kind_set_at, received_at FROM public.capture_documents WHERE id='e309000e-5479-43d8-9df3-04a4512afa30';
+{
+  "rows": [
+    {
+      "id": "e309000e-5479-43d8-9df3-04a4512afa30",
+      "kind": "dc",
+      "kind_set_at": null,
+      "kind_set_by": null,
+      "kind_source": "engineer_declared",
+      "received_at": "2026-10-30 13:48:38.145042+00"
+    }
+  ],
+}
