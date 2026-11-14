@@ -1,7 +1,7 @@
 import * as Sentry from '@sentry/nextjs'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database'
-import { isReportableErr, mapPmRpcError, pmError, type PmActionName, type PmActionResult } from './pm-errors'
+import { isReportableErr, mapPmRpcError, pmError, type PmActionError, type PmActionName, type PmActionResult } from './pm-errors'
 import type { PmErrKey } from './pm-copy'
 
 // PR-D action logic (D7). The five PM writes are the five 050 SECURITY DEFINER functions, called with the SIGNED-IN
@@ -52,7 +52,7 @@ export function normaliseField(v: string | null | undefined): string | null {
   return t === '' ? null : t
 }
 
-function fail(action: PmActionName, key: PmErrKey, detail?: string): PmActionResult {
+function fail(action: PmActionName, key: PmErrKey, detail?: string): PmActionError {
   if (isReportableErr(key)) {
     Sentry.captureException(new Error(`pm ${action} ${detail ?? 'unknown result'}`), { tags: { feature: 'pr-d-pm-page' } })
   }
@@ -187,6 +187,40 @@ export async function runReject(deps: PmActionDeps, input: { deliveryId: string;
     const { data, error } = await deps.client.rpc('pm_reject_delivery', { p_delivery_id: input.deliveryId, p_reason: reason })
     return settle('reject', { data, error }, 'delivery_id', input.deliveryId)
   })
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// classify (PR-D2)
+// ---------------------------------------------------------------------------------------------------------------
+
+export type PmClassifyKind = 'dc' | 'invoice'
+export type PmClassifyResult = { status: 'ok'; deliveryId: string } | PmActionError
+
+/**
+ * public.pm_classify_document(p_document_id, p_kind) (052:323-376), called with the SIGNED-IN user's client (deps.client), never the
+ * service role: the function authorises the caller itself (active PM of the document's own project, QE015 otherwise).
+ * SUCCESS IS NEVER INFERRED (D7): `error === null` AND the jsonb result is an object whose `document_id` echoes the id we sent AND
+ * whose `delivery_id` is a uuid. `already_classified: true` with the same kind is a success (the same delivery). Anything else, including
+ * a null delivery_id, is PM_ERR_CLASSIFY_FAILED + Sentry. The result carries the delivery id only; the caller redirects to it.
+ */
+export async function runClassify(deps: PmActionDeps, input: { documentId: string; kind: string }): Promise<PmClassifyResult> {
+  try {
+    // Shape errors cannot come from the UI; a forged call gets the generic string and is not reported.
+    if (!isUuid(input.documentId) || (input.kind !== 'dc' && input.kind !== 'invoice')) return pmError('PM_ERR_CLASSIFY_FAILED')
+    const { data, error } = await deps.client.rpc('pm_classify_document', { p_document_id: input.documentId, p_kind: input.kind })
+    if (error) {
+      const key = mapPmRpcError('classify', error.code)
+      return fail('classify', key, `${error.code ?? 'no code'}: ${error.message ?? ''}`)
+    }
+    if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
+      const r = data as Record<string, unknown>
+      if (r.document_id === input.documentId && isUuid(r.delivery_id)) return { status: 'ok', deliveryId: r.delivery_id }
+    }
+    return fail('classify', 'PM_ERR_CLASSIFY_FAILED', 'result did not echo the document id or carry a delivery id')
+  } catch (err) {
+    Sentry.captureException(err, { tags: { feature: 'pr-d-pm-page', action: 'classify' } })
+    return pmError('PM_ERR_CLASSIFY_FAILED')
+  }
 }
 
 // ---------------------------------------------------------------------------------------------------------------

@@ -1,7 +1,14 @@
 import type { StatusVariant } from '@/components/ui/status-chip'
 import {
+  PM_ACK_DC_UNCLEAR,
+  PM_ACK_INVOICE_NO,
+  PM_ACK_INVOICE_PARTIAL,
+  PM_ACK_INVOICE_YES,
   PM_ACK_LABEL,
   PM_ACK_NONE,
+  PM_AGE_DAYS,
+  PM_AGE_HOURS,
+  PM_AGE_JUST_NOW,
   PM_LABEL_INVOICE_EXPECTED,
   PM_LABEL_INVOICE_EXPECTED_DAYS,
   PM_LINK_OPTION,
@@ -15,15 +22,44 @@ import {
   PM_TYPE_SUPPLIER,
   type PmAck,
   type PmDocKind,
+  type PmKindSource,
 } from '@/lib/capture/pm-copy'
 
 // Pure mapping from DB values to copy constants and chip variants. No user-facing text is defined here.
 
-/** The ack label for a document of the given kind. An invoice never gets a DC label and the reverse (PM_ACK_LABEL is keyed by kind). */
-export function ackLabel(kind: PmDocKind | null, ack: PmAck | null): string {
-  // No known kind (null-kind tolerance, PR-D2 / MI-KIND-REMOVAL): no kind-specific label exists, so show the existing "no ack" slot.
-  if (kind === null || ack === null) return PM_ACK_NONE
-  return PM_ACK_LABEL[kind][ack]
+/**
+ * The ack label for a document (D8). `kindSource` decides the wording, because it says which question the engineer was asked:
+ *   * 'engineer_declared' (pre-052 rows): the engineer chose DC or invoice and got the per-kind question, so the per-kind label applies
+ *     (PM_ACK_LABEL is keyed by kind: an invoice never gets a DC label and the reverse).
+ *   * 'pm' or NULL kind (after 052): the engineer got ONE neutral "does the material match this document?" question whatever the
+ *     document turned out to be (lib/whatsapp/flows/material-inward-strings.ts, MI_ACK_QUESTION), so 1 / 2 / 3 read "Matches" /
+ *     "Does not match" / "Partly matches" for both kinds, and 'unclear' uses the existing PM_ACK_DC_UNCLEAR text (no new string).
+ * No answer is PM_ACK_NONE.
+ */
+export function ackLabel(kind: PmDocKind | null, ack: PmAck | null, kindSource: PmKindSource): string {
+  if (ack === null) return PM_ACK_NONE
+  if (kind !== null && kindSource === 'engineer_declared') return PM_ACK_LABEL[kind][ack]
+  switch (ack) {
+    case 'yes':
+      return PM_ACK_INVOICE_YES
+    case 'no':
+      return PM_ACK_INVOICE_NO
+    case 'partial':
+      return PM_ACK_INVOICE_PARTIAL
+    case 'unclear':
+      return PM_ACK_DC_UNCLEAR
+  }
+}
+
+/** The age badge text and the overdue flag (D2). Pure: `now` is injected. Age is from capture_documents.received_at (never created_at). */
+export function ageInfo(receivedAt: string, now: Date): { text: string; overdue: boolean } {
+  const ms = now.getTime() - new Date(receivedAt).getTime()
+  const age = Number.isFinite(ms) && ms > 0 ? ms : 0
+  const hours = Math.floor(age / 3_600_000)
+  const overdue = age >= 24 * 3_600_000
+  if (hours < 1) return { text: PM_AGE_JUST_NOW, overdue }
+  if (hours < 48) return { text: PM_AGE_HOURS.replace('{n}', String(hours)), overdue }
+  return { text: PM_AGE_DAYS.replace('{n}', String(Math.floor(hours / 24))), overdue }
 }
 
 /**
@@ -74,7 +110,7 @@ export function formatIstTime(iso: string | null): string {
 
 /** The picker option line (PM_LINK_OPTION). One pass, so text inside a value is never treated as a placeholder. */
 export function linkOptionLabel(
-  c: { receivedAt: string | null; documentCreatedAt: string | null; engineerName: string | null; ack: PmAck | null },
+  c: { receivedAt: string | null; documentCreatedAt: string | null; engineerName: string | null; ack: PmAck | null; kindSource: PmKindSource },
   kind: PmDocKind,
 ): string {
   const at = c.receivedAt ?? c.documentCreatedAt
@@ -82,7 +118,7 @@ export function linkOptionLabel(
     date: formatIstDate(at),
     time: formatIstTime(at),
     engineer: c.engineerName ?? '—',
-    answer: ackLabel(kind, c.ack),
+    answer: ackLabel(kind, c.ack, c.kindSource),
   }
   return PM_LINK_OPTION.replace(/\{(date|time|engineer|answer)\}/g, (_m, k: string) => values[k])
 }

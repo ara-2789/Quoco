@@ -46,6 +46,8 @@ export const PM_ACK_NONE = 'No answer yet' // English approved (Aravind, 2 Nov).
 
 export type PmAck = 'yes' | 'no' | 'partial' | 'unclear'
 export type PmDocKind = 'dc' | 'invoice'
+/** capture_documents.kind_source (052 provenance CHECK): 'engineer_declared' (pre-052 rows), 'pm' (classified), or NULL (unclassified). */
+export type PmKindSource = 'engineer_declared' | 'pm' | null
 
 // Typed so a new DB ack value or document kind is a compile error, and so a kind can never fall through to the
 // other kind's label.
@@ -134,6 +136,25 @@ export const PM_ERR_RETYPE_AUTOMATIC = 'A delivery created from an invoice canno
 export const PM_ERR_LINK_TARGET_INELIGIBLE = 'This DC cannot take an invoice. It is an internal transfer, created from an invoice, or rejected.' // English approved (Aravind, 12 Nov; was "internal GRN" in the 2 Nov text). Tamil owed.
 export const PM_ERR_SAVE_FAILED = 'Something went wrong and nothing was saved. Try again.' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
 
+// ---- PR-D2 (PM classifies an unclassified document). PROPOSED, NOT APPROVED: every constant in this block is the exact
+// text from the PR-D2 build instruction (Aravind, 14 Nov) and awaits approval. Tamil owed, NOT approved.
+export const PM_UNCLASSIFIED_HEADING = 'Documents to classify' // Tamil owed, NOT approved.
+export const PM_UNCLASSIFIED_EMPTY = 'No documents to classify.' // Tamil owed, NOT approved.
+export const PM_UNCLASSIFIED_TRUNCATED = 'Showing the oldest 100 documents.' // Tamil owed, NOT approved.
+export const PM_AGE_JUST_NOW = 'Just now' // Tamil owed, NOT approved.
+export const PM_AGE_HOURS = '{n} h ago' // {n} = whole hours (1-47). Tamil owed, NOT approved.
+export const PM_AGE_DAYS = '{n} days ago' // {n} = whole days (from 48 h). Tamil owed, NOT approved.
+export const PM_AGE_OVERDUE = 'Over 24 h' // Tamil owed, NOT approved.
+export const PM_CLASSIFY_HEADING = 'What is this document?' // Tamil owed, NOT approved.
+export const PM_CLASSIFY_AS_DC = 'DC / GRN' // Tamil owed, NOT approved.
+export const PM_CLASSIFY_AS_INVOICE = 'Invoice' // Tamil owed, NOT approved.
+export const PM_CLASSIFY_CONFIRM_NOTE = 'You cannot change this later. If it is wrong, reject the delivery and ask the engineer to send it again.' // Tamil owed, NOT approved.
+export const PM_CONFIRM_CLASSIFY_DC = 'Confirm DC / GRN' // Tamil owed, NOT approved.
+export const PM_CONFIRM_CLASSIFY_INVOICE = 'Confirm invoice' // Tamil owed, NOT approved.
+export const PM_ERR_CLASSIFY_NOT_AVAILABLE = 'This document is not available to you.' // QE015. Tamil owed, NOT approved.
+export const PM_ERR_CLASSIFY_OTHER_KIND = 'Another PM already classified this document differently. Refresh to see it.' // QE011. Tamil owed, NOT approved.
+export const PM_ERR_CLASSIFY_FAILED = 'Could not save. Try again.' // QE009 / QE012 / QE014 / 23xxx / anything else. Tamil owed, NOT approved.
+
 /** The display-side error table: key name -> string. The name is what tests assert on; the string is the placeholder. */
 export const PM_ERR_MESSAGES = {
   PM_ERR_NOT_AVAILABLE,
@@ -149,6 +170,9 @@ export const PM_ERR_MESSAGES = {
   PM_ERR_RETYPE_AUTOMATIC,
   PM_ERR_LINK_TARGET_INELIGIBLE,
   PM_ERR_SAVE_FAILED,
+  PM_ERR_CLASSIFY_NOT_AVAILABLE,
+  PM_ERR_CLASSIFY_OTHER_KIND,
+  PM_ERR_CLASSIFY_FAILED,
 } as const
 
 export type PmErrKey = keyof typeof PM_ERR_MESSAGES

@@ -46,11 +46,11 @@ function item(over: Partial<PmListItem>): PmListItem {
     projectName: 'P',
     status: 'awaiting_pm',
     deliveryType: 'supplier',
-    vehicleNumber: 'TN01',
     dcNumber: 'DC-1',
     deliveryDate: '2026-10-30',
     receivedAt: '2026-10-30T05:00:00Z',
     kind: 'dc',
+    kindSource: 'engineer_declared',
     ack: 'yes',
     createdFromInvoice: false,
     cancelReason: null,
@@ -200,7 +200,7 @@ describe('controls render only copy constants', () => {
           mode="dc"
           invoiceDocumentId={null}
           deliveryId={DEL_ID}
-          candidates={[{ id: FILE_ID, receivedAt: null, documentCreatedAt: '2026-10-30T05:00:00Z', dcNumber: null, ack: 'yes', engineerName: null }]}
+          candidates={[{ id: FILE_ID, receivedAt: null, documentCreatedAt: '2026-10-30T05:00:00Z', dcNumber: null, ack: 'yes', kindSource: 'engineer_declared', engineerName: null }]}
           unlinkable={[]}
         />,
       ),
@@ -225,7 +225,7 @@ describe('H2: a caption that is a file name is never rendered', () => {
   const FILE_NAMES = ['phone pdf.pdf', 'WhatsApp Image 2026-10-05 at 10.00.00.jpeg']
 
   function detail(kind: 'dc' | 'invoice', caption: string): PmDetail {
-    const document = { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', kind, ack: 'yes', ackNote: null, caption }
+    const document = { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', kind, ack: 'yes', kindSource: 'engineer_declared', ackNote: null, caption }
     const base = {
       id: DEL_ID,
       projectId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
@@ -319,7 +319,7 @@ describe('M1: the own-ack element', () => {
             rejectReason: null,
             createdFromInvoice: kind === 'invoice',
             engineerName: 'E',
-            document: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', kind, ack, ackNote: null },
+            document: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', kind, ack, kindSource: 'engineer_declared', ackNote: null },
             files: [],
             hasStoredFile: false,
             activeLinks: [],
@@ -385,7 +385,7 @@ describe('H2: the invoice-pending day count (list row and detail view)', () => {
             rejectReason: null,
             createdFromInvoice: false,
             engineerName: 'E',
-            document: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', kind: 'dc', ack: 'yes', ackNote: null },
+            document: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', kind: 'dc', ack: 'yes', kindSource: 'engineer_declared', ackNote: null },
             files: [],
             hasStoredFile: false,
             activeLinks: [],

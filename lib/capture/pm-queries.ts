@@ -2,7 +2,7 @@ import * as Sentry from '@sentry/nextjs'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database'
 import { istDateString } from '@/lib/daily-logs/date'
-import { PM_PENDING_TIMEOUT_MINUTES, type PmAck, type PmDocKind } from './pm-copy'
+import { PM_PENDING_TIMEOUT_MINUTES, type PmAck, type PmDocKind, type PmKindSource } from './pm-copy'
 
 // PR-D reads (D6). EVERY read here uses the SIGNED-IN USER's client, never the service role. Membership is
 // enforced by the database: the four capture tables' SELECT policies require the same tenant AND an active user
@@ -73,6 +73,11 @@ export function istDaysSince(deliveryDate: string, now: Date): number {
   return Math.max(0, Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86_400_000))
 }
 
+/** kind_source as stored: 'engineer_declared' | 'pm' | NULL. Anything else is read as NULL (the 052 provenance CHECK allows only these). */
+export function asKindSource(v: string | null | undefined): PmKindSource {
+  return v === 'engineer_declared' ? 'engineer_declared' : v === 'pm' ? 'pm' : null
+}
+
 function asAck(v: string | null): PmAck | null {
   return v === 'yes' || v === 'no' || v === 'partial' || v === 'unclear' ? v : null
 }
@@ -106,11 +111,12 @@ export interface PmListItem {
   projectName: string
   status: string
   deliveryType: string | null
-  vehicleNumber: string | null
   dcNumber: string | null
   deliveryDate: string | null
   receivedAt: string
   kind: PmDocKind
+  /** How the kind was set (D8): decides which ack wording the engineer's answer gets. */
+  kindSource: PmKindSource
   ack: PmAck | null
   createdFromInvoice: boolean
   cancelReason: string | null
@@ -186,7 +192,7 @@ export async function getMaterialInwardList(
   const reporterIds = [...new Set(rows.map((r) => r.reported_by))]
 
   const [docs, files, links, users, projects] = await Promise.all([
-    client.from('capture_documents').select('id, kind, engineer_ack').eq('tenant_id', tenantId).in('id', docIds),
+    client.from('capture_documents').select('id, kind, kind_source, engineer_ack').eq('tenant_id', tenantId).in('id', docIds),
     client.from('capture_files').select('document_id').eq('tenant_id', tenantId).in('document_id', docIds),
     client
       .from('delivery_invoice_links')
@@ -220,11 +226,11 @@ export async function getMaterialInwardList(
       projectName: projectName.get(r.project_id) ?? '—',
       status: r.status,
       deliveryType: r.delivery_type,
-      vehicleNumber: r.vehicle_number,
       dcNumber: r.dc_number,
       deliveryDate: r.delivery_date,
       receivedAt: r.received_at,
       kind,
+      kindSource: doc ? asKindSource(doc.kind_source) : null,
       ack: doc ? asAck(doc.engineer_ack) : null,
       createdFromInvoice: r.created_from_invoice_id !== null,
       cancelReason: r.cancel_reason,
@@ -256,6 +262,8 @@ export interface PmCandidate {
   documentCreatedAt: string | null
   dcNumber: string | null
   ack: PmAck | null
+  /** The candidate document's own kind_source (D8). */
+  kindSource: PmKindSource
   engineerName: string | null
 }
 
@@ -277,6 +285,7 @@ export interface PmDetail {
   document: {
     id: string
     kind: PmDocKind
+    kindSource: PmKindSource
     ack: PmAck | null
     ackNote: string | null
     // No `caption` on purpose (D-30 F4): capture_documents.caption holds the WhatsApp FILE NAME, not engineer text.
@@ -337,7 +346,7 @@ export async function getDeliveryDetail(
   if (!docId) return { status: 'not-found' }
 
   const [doc, files, links, project, reporter] = await Promise.all([
-    client.from('capture_documents').select('id, kind, engineer_ack, engineer_ack_note').eq('tenant_id', tenantId).eq('id', docId).maybeSingle(),
+    client.from('capture_documents').select('id, kind, kind_source, engineer_ack, engineer_ack_note').eq('tenant_id', tenantId).eq('id', docId).maybeSingle(),
     client
       .from('capture_files')
       .select('id, file_no, ingest_status, reject_reason, preview_state, content_type, created_at')
@@ -396,6 +405,7 @@ export async function getDeliveryDetail(
     document: {
       id: doc.data.id,
       kind,
+      kindSource: asKindSource(doc.data.kind_source),
       ack: asAck(doc.data.engineer_ack),
       ackNote: doc.data.engineer_ack_note,
     },
@@ -457,9 +467,10 @@ export async function getDeliveryDetail(
     const eligible = cand ?? []
     if (eligible.length > 0) {
       const dcIds = eligible.map((c) => c.dc_document_id).filter((v): v is string => v !== null)
-      const dcDocs = await client.from('capture_documents').select('id, engineer_ack, kind').eq('tenant_id', tenantId).in('id', dcIds)
+      const dcDocs = await client.from('capture_documents').select('id, engineer_ack, kind, kind_source').eq('tenant_id', tenantId).in('id', dcIds)
       if (dcDocs.error) return reportRead('candidate documents', dcDocs.error)
       const ackByDoc = new Map((dcDocs.data ?? []).map((x) => [x.id, asAck(x.engineer_ack)]))
+      const sourceByDoc = new Map((dcDocs.data ?? []).map((x) => [x.id, asKindSource(x.kind_source)]))
       const dcKindOk = new Set((dcDocs.data ?? []).filter((x) => asKind(x.kind) === 'dc').map((x) => x.id))
       const shown = eligible.filter((c) => c.dc_document_id !== null && dcKindOk.has(c.dc_document_id))
       const dcNames = await readEngineerNames(client, tenantId, shown.map((c) => c.reported_by))
@@ -470,6 +481,7 @@ export async function getDeliveryDetail(
         documentCreatedAt: null,
         dcNumber: c.dc_number,
         ack: c.dc_document_id ? (ackByDoc.get(c.dc_document_id) ?? null) : null,
+        kindSource: c.dc_document_id ? (sourceByDoc.get(c.dc_document_id) ?? null) : null,
         engineerName: dcNames.names.get(c.reported_by) ?? null,
       }))
     }
@@ -501,7 +513,7 @@ export async function getDeliveryDetail(
       const blockedInvoiceIds = (approvedAuto ?? []).map((a) => a.created_from_invoice_id).filter((v): v is string => v !== null)
       let invQuery = client
         .from('capture_documents')
-        .select('id, engineer_ack, created_at, sent_by')
+        .select('id, engineer_ack, kind_source, created_at, sent_by')
         .eq('tenant_id', tenantId)
         .eq('project_id', d.project_id)
         .eq('kind', 'invoice')
@@ -519,10 +531,183 @@ export async function getDeliveryDetail(
         documentCreatedAt: i.created_at,
         dcNumber: null,
         ack: asAck(i.engineer_ack),
+        kindSource: asKindSource(i.kind_source),
         engineerName: invNames.names.get(i.sent_by) ?? null,
       }))
     }
     if (open && !mine && d.delivery_date) detail.invoiceExpectedDays = istDaysSince(d.delivery_date, now)
   }
   return { status: 'ok', detail }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// PR-D2: documents waiting for the PM to classify (capture_documents.kind IS NULL)
+// ---------------------------------------------------------------------------------------------------------------
+// These rows have NO delivery yet (the delivery is created by pm_classify_document, 052:300-305), so the PR-D1 reads, which start from
+// `deliveries`, can never show them. Same user-session client and the same RLS as every other read here: capture_documents_select and
+// capture_files_select (049:906, 921) carry no condition on kind, so a PM reads a kind-NULL document and its files.
+
+export interface PmUnclassifiedItem {
+  documentId: string
+  projectName: string
+  engineerName: string | null
+  receivedAt: string
+  ack: PmAck | null
+  fileCount: number
+  /** D4: at least one file with ingest_status 'stored'. Classify is disabled until then. */
+  hasStoredFile: boolean
+}
+
+export type PmUnclassifiedResult =
+  | { status: 'error' }
+  | { status: 'not-a-pm' }
+  | { status: 'ok'; items: PmUnclassifiedItem[]; truncated: boolean }
+
+/** Oldest `received_at` first (the one waiting longest is on top; id breaks ties), at most `limit` (default PM_LIST_LIMIT). */
+export async function getUnclassifiedList(
+  client: Client,
+  reader: PmReader,
+  opts: { limit?: number } = {},
+): Promise<PmUnclassifiedResult> {
+  if (reader.tenant_id === null) return { status: 'not-a-pm' }
+  const tenantId = reader.tenant_id
+  const limit = opts.limit ?? PM_LIST_LIMIT
+
+  const { data: mem, error: memErr } = await client
+    .from('project_members')
+    .select('project_id')
+    .eq('tenant_id', tenantId)
+    .eq('user_id', reader.id)
+    .eq('role', 'pm')
+  if (memErr) return reportRead('memberships', memErr)
+  const projectIds = [...new Set((mem ?? []).map((m) => m.project_id))]
+  if (projectIds.length === 0) return { status: 'not-a-pm' }
+
+  const { data: docs, error: docErr } = await client
+    .from('capture_documents')
+    .select('id, project_id, sent_by, received_at, engineer_ack')
+    .eq('tenant_id', tenantId)
+    .in('project_id', projectIds)
+    .is('kind', null)
+    .order('received_at', { ascending: true })
+    .order('id', { ascending: true })
+    .limit(limit + 1)
+  if (docErr) return reportRead('unclassified documents', docErr)
+  const truncated = (docs ?? []).length > limit
+  const rows = (docs ?? []).slice(0, limit)
+  if (rows.length === 0) return { status: 'ok', items: [], truncated: false }
+
+  const docIds = rows.map((r) => r.id)
+  const [files, names, projects] = await Promise.all([
+    client.from('capture_files').select('document_id, ingest_status').eq('tenant_id', tenantId).in('document_id', docIds),
+    readEngineerNames(client, tenantId, rows.map((r) => r.sent_by)),
+    client.from('projects').select('id, name').eq('tenant_id', tenantId).in('id', [...new Set(rows.map((r) => r.project_id))]),
+  ])
+  if (files.error) return reportRead('unclassified files', files.error)
+  if (!names.ok) return reportRead('unclassified engineers', names.error)
+  if (projects.error) return reportRead('unclassified projects', projects.error)
+
+  const fileCount = new Map<string, number>()
+  const stored = new Set<string>()
+  for (const f of files.data ?? []) {
+    fileCount.set(f.document_id, (fileCount.get(f.document_id) ?? 0) + 1)
+    if (f.ingest_status === 'stored') stored.add(f.document_id)
+  }
+  const projectName = new Map((projects.data ?? []).map((p) => [p.id, p.name]))
+
+  return {
+    status: 'ok',
+    truncated,
+    items: rows.map((r) => ({
+      documentId: r.id,
+      projectName: projectName.get(r.project_id) ?? '—',
+      engineerName: names.names.get(r.sent_by) ?? null,
+      receivedAt: r.received_at,
+      ack: asAck(r.engineer_ack),
+      fileCount: fileCount.get(r.id) ?? 0,
+      hasStoredFile: stored.has(r.id),
+    })),
+  }
+}
+
+export interface PmClassifyDocument {
+  id: string
+  projectName: string
+  engineerName: string | null
+  receivedAt: string
+  ack: PmAck | null
+  ackNote: string | null
+  files: PmFileItem[]
+  hasStoredFile: boolean
+}
+
+export type PmClassifyDocResult =
+  | { status: 'error' }
+  | { status: 'not-found' }
+  /** D5: the document already has a kind and a delivery: the page redirects to it. A kind with no delivery is 'not-found'. */
+  | { status: 'redirect'; deliveryId: string }
+  | { status: 'ok'; doc: PmClassifyDocument }
+
+/** The classify page's read. RLS makes another project's / tenant's / a nonexistent document the same 'not-found'. */
+export async function getClassifyDocument(client: Client, reader: PmReader, documentId: string, now: Date): Promise<PmClassifyDocResult> {
+  if (reader.tenant_id === null) return { status: 'not-found' }
+  const tenantId = reader.tenant_id
+  // documentId comes from the URL and is interpolated into a PostgREST `or(...)` filter below: only a UUID gets in.
+  if (!UUID_RE.test(documentId)) return { status: 'not-found' }
+
+  const { data: doc, error: docErr } = await client
+    .from('capture_documents')
+    .select('id, project_id, kind, sent_by, received_at, engineer_ack, engineer_ack_note')
+    .eq('tenant_id', tenantId)
+    .eq('id', documentId)
+    .maybeSingle()
+  if (docErr) return reportRead('classify document', docErr)
+  if (!doc) return { status: 'not-found' }
+
+  if (doc.kind !== null) {
+    const { data: del, error: delErr } = await client
+      .from('deliveries')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .or(`dc_document_id.eq.${documentId},created_from_invoice_id.eq.${documentId}`)
+      .limit(1)
+      .maybeSingle()
+    if (delErr) return reportRead('classify delivery', delErr)
+    return del ? { status: 'redirect', deliveryId: del.id } : { status: 'not-found' }
+  }
+
+  const [files, project, engineer] = await Promise.all([
+    client
+      .from('capture_files')
+      .select('id, file_no, ingest_status, reject_reason, preview_state, content_type, created_at')
+      .eq('tenant_id', tenantId)
+      .eq('document_id', documentId)
+      .order('file_no', { ascending: true }),
+    client.from('projects').select('name').eq('tenant_id', tenantId).eq('id', doc.project_id).maybeSingle(),
+    readEngineerNames(client, tenantId, [doc.sent_by]),
+  ])
+  if (files.error) return reportRead('classify files', files.error)
+  if (project.error) return reportRead('classify project', project.error)
+  if (!engineer.ok) return reportRead('classify engineer', engineer.error)
+
+  const fileItems: PmFileItem[] = (files.data ?? []).map((f) => ({
+    id: f.id,
+    fileNo: f.file_no,
+    display: fileDisplayState(f, now),
+    contentType: f.content_type,
+    previewState: f.preview_state,
+  }))
+  return {
+    status: 'ok',
+    doc: {
+      id: doc.id,
+      projectName: project.data?.name ?? '—',
+      engineerName: engineer.names.get(doc.sent_by) ?? null,
+      receivedAt: doc.received_at,
+      ack: asAck(doc.engineer_ack),
+      ackNote: doc.engineer_ack_note,
+      files: fileItems,
+      hasStoredFile: fileItems.some((f) => f.display === 'stored'),
+    },
+  }
 }

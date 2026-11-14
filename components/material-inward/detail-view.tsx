@@ -77,7 +77,7 @@ export function DetailView({ d }: { d: PmDetail }) {
           <Row label={PM_FIELD_PROJECT} value={d.projectName} />
           <Row label={PM_FIELD_RECEIVED} value={formatIstDate(d.receivedAt)} />
           <Row label={PM_FIELD_ENGINEER} value={d.engineerName ?? '—'} />
-          <Row label={PM_FIELD_ACK} value={ackLabel(kind, d.document.ack)} testId="own-ack" />
+          <Row label={PM_FIELD_ACK} value={ackLabel(kind, d.document.ack, d.document.kindSource)} testId="own-ack" />
           {d.document.ackNote && <Row label={PM_FIELD_ACK_NOTE} value={d.document.ackNote} />}
           {d.rejectReason && <Row label={PM_FIELD_REJECT_REASON} value={d.rejectReason} />}
         </dl>

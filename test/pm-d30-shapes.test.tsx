@@ -158,28 +158,32 @@ describe('rendering the REAL detail objects of those shapes', () => {
     expect(html).not.toMatch(/caption/i)
   })
 
-  it('the invoice page: every picker candidate row (a DC delivery) renders its DC ack label', async () => {
+  it('the invoice page: every picker candidate row (a PM-classified DC delivery) renders the neutral ack label (PR-D2, D8)', async () => {
     const r = await getDeliveryDetail(await kit.jwt('pm1'), readerOf(kit, 'pm1'), shapes.invThreeFiles.deliveryId, NOW)
     if (r.status !== 'ok') throw new Error('detail not ok')
     // the multi-file DC (acked yes, awaiting_pm, no link) is an eligible candidate for this invoice
     expect(r.detail.candidates.map((c) => c.id)).toContain(shapes.dcTwoFiles.deliveryId)
+    // 052: these fixtures are classified by the PM (makeDocWithCaption -> classifyAsPm), so the candidate's own kind_source is 'pm' and the
+    // engineer was asked the neutral question: D8 shows "Matches", not the pre-052 DC wording.
+    expect(r.detail.candidates.every((c) => c.kindSource === 'pm')).toBe(true)
     expect(r.detail.candidates.every((c) => c.ack === null || ['yes', 'no', 'partial', 'unclear'].includes(c.ack))).toBe(true)
     const html = renderToStaticMarkup(<DetailView d={r.detail} />)
     const rows = [...html.matchAll(/<label class="flex items-center gap-2[^>]*>.*?<\/label>/g)].map((m) => m[0])
     expect(rows.length).toBe(r.detail.candidates.length)
     for (const row of rows) {
-      expect([...DC_ACK_VALUES, copy.PM_ACK_NONE].some((v) => row.includes(v)), 'the row carries a DC ack value or the no-answer value').toBe(true)
-      expectNoneOf(row, INVOICE_ACK_VALUES)
+      expect([...INVOICE_ACK_VALUES, copy.PM_ACK_DC_UNCLEAR, copy.PM_ACK_NONE].some((v) => row.includes(v)), 'the row carries a neutral ack value or the no-answer value').toBe(true)
+      expectNoneOf(row, [copy.PM_ACK_DC_YES, copy.PM_ACK_DC_NO, copy.PM_ACK_DC_PARTIAL]) // the per-kind DC wording is for engineer_declared rows only
     }
-    expect(rows.some((row) => row.includes(copy.PM_ACK_DC_YES))).toBe(true) // the positive expectation
+    expect(rows.some((row) => row.includes(copy.PM_ACK_INVOICE_YES))).toBe(true) // the positive expectation
   })
 
-  it('the DC page: its own ack never renders an invoice label', async () => {
+  it('the DC page (PM-classified): its own ack is the neutral "Matches" (PR-D2, D8), never the pre-052 DC wording', async () => {
     const r = await getDeliveryDetail(await kit.jwt('pm1'), readerOf(kit, 'pm1'), shapes.dcTwoFiles.deliveryId, NOW)
     if (r.status !== 'ok') throw new Error('detail not ok')
     const html = renderToStaticMarkup(<DetailView d={r.detail} />)
-    expect(ownAck(html)).toBe(copy.PM_ACK_DC_YES)
-    expectNoneOf(ownAck(html), INVOICE_ACK_VALUES)
+    expect(r.detail.document.kindSource).toBe('pm')
+    expect(ownAck(html)).toBe(copy.PM_ACK_INVOICE_YES)
+    expectNoneOf(ownAck(html), [copy.PM_ACK_DC_YES, copy.PM_ACK_DC_NO, copy.PM_ACK_DC_PARTIAL])
   })
 })
 

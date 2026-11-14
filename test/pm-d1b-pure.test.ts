@@ -33,13 +33,13 @@ describe('R2: formatIstTime (12-hour IST, lowercase am/pm)', () => {
 })
 
 describe('R2 / item 8: the picker option line', () => {
-  const base = { receivedAt: '2026-11-02T05:03:00Z', documentCreatedAt: null, engineerName: 'Ravi', ack: 'yes' as const }
+  const base = { receivedAt: '2026-11-02T05:03:00Z', documentCreatedAt: null, engineerName: 'Ravi', ack: 'yes' as const, kindSource: 'engineer_declared' as const }
   it('is "{date}, {time} · {engineer} · {answer}", with the answer of the candidate\'s own kind', () => {
     expect(linkOptionLabel(base, 'dc')).toBe(`${formatIstDate(base.receivedAt)}, 10:33 am · Ravi · ${copy.PM_ACK_DC_YES}`)
     expect(linkOptionLabel(base, 'invoice')).toBe(`${formatIstDate(base.receivedAt)}, 10:33 am · Ravi · ${copy.PM_ACK_INVOICE_YES}`)
   })
   it('an invoice candidate uses its document time; no engineer is an em dash; no answer is the no-answer label', () => {
-    const l = linkOptionLabel({ receivedAt: null, documentCreatedAt: '2026-11-02T05:03:00Z', engineerName: null, ack: null }, 'invoice')
+    const l = linkOptionLabel({ receivedAt: null, documentCreatedAt: '2026-11-02T05:03:00Z', engineerName: null, ack: null, kindSource: 'engineer_declared' }, 'invoice')
     expect(l).toBe(`${formatIstDate('2026-11-02T05:03:00Z')}, 10:33 am · — · ${copy.PM_ACK_NONE}`)
   })
   it('text inside a name is never treated as a placeholder or a replacement pattern', () => {

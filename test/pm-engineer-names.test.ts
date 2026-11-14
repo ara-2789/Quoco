@@ -69,7 +69,7 @@ describe('R4: readEngineerNames is scoped to the reader\'s tenant', () => {
     expect(r.names.has(USER_B)).toBe(false)
     expect([...r.names.values()]).not.toContain('Bharath B')
     const label = linkOptionLabel(
-      { receivedAt: '2026-11-02T05:03:00Z', documentCreatedAt: null, engineerName: r.names.get(USER_B) ?? null, ack: 'yes' },
+      { receivedAt: '2026-11-02T05:03:00Z', documentCreatedAt: null, engineerName: r.names.get(USER_B) ?? null, ack: 'yes', kindSource: 'engineer_declared' },
       'dc',
     )
     expect(label).toContain(' · — · ')
