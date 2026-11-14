@@ -11,6 +11,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   buildCaptureKit,
   captureAnon,
+  classifyAsPm,
   makeDoc,
   ack,
   miTurn,
@@ -178,14 +179,18 @@ export async function makeDocWithCaption(
 ): Promise<MultiFileDoc> {
   const phone = kit.phone(label)
   const base = { ...(o.tenantId ? { tenantId: o.tenantId } : {}), ...(o.projectId ? { projectId: o.projectId } : {}), ...(o.userId ? { userId: o.userId } : {}) }
+  // 052 (plan S-A): start -> file -> classify as the PM, the real path. The engineer sends no kind; the delivery (and for an
+  // invoice the self-link) is created by the PM's classification, which also stamps kind_source = 'pm'.
   await miTurn(kit, phone, '4', kit.sid(`${label}-s0`), { ...base, start: true })
-  await miTurn(kit, phone, kind === 'dc' ? '1' : '2', kit.sid(`${label}-s1`), base)
   const fileSid = kit.sid(`${label}-s2`)
   const r = await miTurn(kit, phone, caption, fileSid, { ...base, media: jpegMedia(nFiles) })
-  if (!r.document_id || !r.delivery_id) throw new Error(`makeDocWithCaption(${label}): no document_id/delivery_id in ${JSON.stringify(r)}`)
+  if (!r.document_id) throw new Error(`makeDocWithCaption(${label}): no document_id in ${JSON.stringify(r)}`)
+  const c = await classifyAsPm(kit, r.document_id, kind, o.projectId === kit.p2 ? 'pm2' : 'pm1')
+  const deliveryId = (c.data as { delivery_id?: string } | null)?.delivery_id
+  if (c.error || !deliveryId) throw new Error(`makeDocWithCaption(${label}): classify failed (${c.error?.code}): ${c.error?.message}`)
   const files = await filesOfDoc(kit, r.document_id)
   if (files.length !== nFiles) throw new Error(`makeDocWithCaption(${label}): expected ${nFiles} files, got ${files.length}`)
-  return { phone, docId: r.document_id, deliveryId: r.delivery_id, fileSid, fileIds: files.map((f) => f.id) }
+  return { phone, docId: r.document_id, deliveryId, fileSid, fileIds: files.map((f) => f.id) }
 }
 
 export const D30_CAPTION_JPEG = 'WhatsApp Image 2026-10-05 at 10.00.00.jpeg'
