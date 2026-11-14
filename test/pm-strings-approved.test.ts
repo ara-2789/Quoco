@@ -85,12 +85,29 @@ const APPROVED: Record<string, string> = {
   PM_ERR_SELF_LINK_FIXED: "An invoice's link to its own delivery cannot be removed.",
   PM_ERR_RETYPE_LINKED: "Unlink the invoice before you change this to an internal transfer.", // per Aravind, 12 Nov
   PM_ERR_RETYPE_AUTOMATIC: "A delivery created from an invoice cannot be an internal transfer.", // per Aravind, 12 Nov
+  // PR-D2: PROPOSED, NOT APPROVED (exact text from the build instruction, Aravind, 14 Nov). Pinned so a wording change is a deliberate edit.
+  PM_UNCLASSIFIED_HEADING: "Documents to classify",
+  PM_UNCLASSIFIED_EMPTY: "No documents to classify.",
+  PM_UNCLASSIFIED_TRUNCATED: "Showing the oldest 100 documents.",
+  PM_AGE_JUST_NOW: "Just now",
+  PM_AGE_HOURS: "{n} h ago",
+  PM_AGE_DAYS: "{n} days ago",
+  PM_AGE_OVERDUE: "Over 24 h",
+  PM_CLASSIFY_HEADING: "What is this document?",
+  PM_CLASSIFY_AS_DC: "DC / GRN",
+  PM_CLASSIFY_AS_INVOICE: "Invoice",
+  PM_CLASSIFY_CONFIRM_NOTE: "You cannot change this later. If it is wrong, reject the delivery and ask the engineer to send it again.",
+  PM_CONFIRM_CLASSIFY_DC: "Confirm DC / GRN",
+  PM_CONFIRM_CLASSIFY_INVOICE: "Confirm invoice",
+  PM_ERR_CLASSIFY_NOT_AVAILABLE: "This document is not available to you.",
+  PM_ERR_CLASSIFY_OTHER_KIND: "Another PM already classified this document differently. Refresh to see it.",
+  PM_ERR_CLASSIFY_FAILED: "Could not save. Try again.",
 }
 
 const strings = Object.entries(copy).filter(([, v]) => typeof v === 'string') as Array<[string, string]>
 
 describe('PR-D1 / PR-D1b approved English strings (Aravind, 2, 3 and 12 Nov)', () => {
-  it('the approved list has 79 keys', () => expect(Object.keys(APPROVED)).toHaveLength(79))
+  it('the pinned list has 95 keys: 79 approved (PR-D1/D1b) + 16 proposed-not-approved (PR-D2)', () => expect(Object.keys(APPROVED)).toHaveLength(95))
 
   it('pm-copy.ts exports exactly the approved keys plus PM_PAGE_TITLE as strings: no key added, none missing', () => {
     expect(strings.map(([k]) => k).filter((k) => k !== 'PM_PAGE_TITLE').sort()).toEqual(Object.keys(APPROVED).sort())
@@ -134,11 +151,14 @@ describe('PR-D1 / PR-D1b approved English strings (Aravind, 2, 3 and 12 Nov)', (
     })
   })
 
-  it('the error table keeps its 13 keys', () => {
+  it('the error table has 16 keys: the 13 of PR-D1/D1b + the 3 classify keys of PR-D2 (no PM_ERR_CLASSIFY_KIND_CHANGE)', () => {
     expect(Object.keys(copy.PM_ERR_MESSAGES).sort()).toEqual(
       [
         'PM_ERR_ALREADY_LINKED',
         'PM_ERR_ALREADY_UNLINKED',
+        'PM_ERR_CLASSIFY_FAILED',
+        'PM_ERR_CLASSIFY_NOT_AVAILABLE',
+        'PM_ERR_CLASSIFY_OTHER_KIND',
         'PM_ERR_INVALID_INPUT',
         'PM_ERR_LINK_AUTO_APPROVED',
         'PM_ERR_LINK_TARGET_INELIGIBLE',

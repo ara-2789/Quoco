@@ -472,15 +472,15 @@ describe('L2: a document with no known kind is left out; nothing is guessed', ()
     expect(r.status === 'ok' ? r.detail.candidates.map((c) => c.id) : []).toEqual(['c1'])
   })
 
-  it('asKind: only the two known values; ackLabel: a null kind shows the existing no-ack slot, never a kind label', () => {
+  it('asKind: only the two known values; ackLabel: a null kind never gets a per-kind label (D8: the neutral wording instead)', () => {
     expect(asKind('dc')).toBe('dc')
     expect(asKind('invoice')).toBe('invoice')
     expect(asKind(null)).toBeNull()
     expect(asKind(undefined)).toBeNull()
     expect(asKind('receipt')).toBeNull()
-    expect(ackLabel(null, 'yes')).toBe(copy.PM_ACK_NONE)
-    expect(ackLabel(null, null)).toBe(copy.PM_ACK_NONE)
-    expect(ackLabel('dc', 'yes')).toBe(copy.PM_ACK_DC_YES) // POSITIVE CONTROL
+    expect(ackLabel(null, 'yes', null)).toBe(copy.PM_ACK_INVOICE_YES) // PR-D2 (D8): was PM_ACK_NONE; an answered kind-NULL document is no longer "No answer yet"
+    expect(ackLabel(null, null, null)).toBe(copy.PM_ACK_NONE)
+    expect(ackLabel('dc', 'yes', 'engineer_declared')).toBe(copy.PM_ACK_DC_YES) // POSITIVE CONTROL
   })
 
   it('download name: a null kind gets the neutral file-<n>.<ext>; dc / invoice keep their raw value; anything else is refused', () => {

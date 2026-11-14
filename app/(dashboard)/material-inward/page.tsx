@@ -1,8 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { getProfile } from '@/lib/auth/profile'
-import { getMaterialInwardList } from '@/lib/capture/pm-queries'
+import { getMaterialInwardList, getUnclassifiedList } from '@/lib/capture/pm-queries'
 import { PM_EMPTY_STATE, PM_LIST_TRUNCATED, PM_LOAD_ERROR, PM_NOT_A_PM_STATE, PM_PAGE_TITLE } from '@/lib/capture/pm-copy'
 import { DeliveryRow } from '@/components/material-inward/delivery-row'
+import { UnclassifiedSection } from '@/components/material-inward/unclassified-section'
 
 // PR-D: PM list "Material Inward" (docs/plans/pr-d-plan.md). D2: never cached; the 15-minute rule and "invoice
 // expected" day counts depend on the clock at request time. The session client reads cookies, which already makes
@@ -18,13 +19,17 @@ export const dynamic = 'force-dynamic'
 export default async function MaterialInwardPage() {
   const supabase = await createClient()
   const profile = await getProfile()
-  const result = await getMaterialInwardList(supabase, { id: profile.id, tenant_id: profile.tenant_id }, new Date())
+  const now = new Date()
+  const reader = { id: profile.id, tenant_id: profile.tenant_id }
+  // PR-D2: the documents waiting to be classified (no delivery yet) are read separately and shown ABOVE the deliveries.
+  const [result, unclassified] = await Promise.all([getMaterialInwardList(supabase, reader, now), getUnclassifiedList(supabase, reader)])
 
   return (
     <div>
       <div className="mb-8">
         <h1 className="text-2xl font-semibold text-gray-900">{PM_PAGE_TITLE}</h1>
       </div>
+      <UnclassifiedSection result={unclassified} now={now} />
       {result.status === 'error' ? (
         <p className="text-sm text-gray-700">{PM_LOAD_ERROR}</p>
       ) : result.status === 'not-a-pm' ? (

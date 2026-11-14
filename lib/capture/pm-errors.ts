@@ -7,9 +7,18 @@ import { PM_ERR_MESSAGES, type PmErrKey } from './pm-copy'
 // QE015 is ONE shape for every refusal (not found, not your project, bad input, foreign id): the page never says
 // which. QE011 is the one code whose meaning depends on the action, so the action is an input.
 
-export type PmActionName = 'set_details' | 'approve' | 'reject' | 'link' | 'unlink'
+export type PmActionName = 'set_details' | 'approve' | 'reject' | 'link' | 'unlink' | 'classify'
 
 export function mapPmRpcError(action: PmActionName, code: string | null | undefined): PmErrKey {
+  // PR-D2 (D6): classify has its own closed table. QE015 (not found / not a PM of the project / null id, 052:339,350,364) and QE011 (the
+  // document already has a DIFFERENT kind, 052:248-250) are the only expected refusals. QE009 is unreachable through the RPC, QE012 cannot
+  // be sent by this UI, QE014 is an isolation-level guard, 23xxx are constraint errors: all of them, and anything unknown, are the
+  // reported catch-all. The raw database text is never part of the result.
+  if (action === 'classify') {
+    if (code === 'QE015') return 'PM_ERR_CLASSIFY_NOT_AVAILABLE'
+    if (code === 'QE011') return 'PM_ERR_CLASSIFY_OTHER_KIND'
+    return 'PM_ERR_CLASSIFY_FAILED'
+  }
   switch (code) {
     case 'QE015':
       return 'PM_ERR_NOT_AVAILABLE'
@@ -45,11 +54,12 @@ export function mapPmRpcError(action: PmActionName, code: string | null | undefi
 
 /** Only the catch-all is reported to Sentry: every other key is an expected, user-visible refusal. */
 export function isReportableErr(key: PmErrKey): boolean {
-  return key === 'PM_ERR_SAVE_FAILED'
+  return key === 'PM_ERR_SAVE_FAILED' || key === 'PM_ERR_CLASSIFY_FAILED'
 }
 
-export type PmActionResult = { status: 'ok' } | { status: 'error'; key: PmErrKey; message: string }
+export type PmActionError = { status: 'error'; key: PmErrKey; message: string }
+export type PmActionResult = { status: 'ok' } | PmActionError
 
-export function pmError(key: PmErrKey): PmActionResult {
+export function pmError(key: PmErrKey): PmActionError {
   return { status: 'error', key, message: PM_ERR_MESSAGES[key] }
 }

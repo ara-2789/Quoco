@@ -34,7 +34,7 @@ export function DeliveryRow({ item }: { item: PmListItem }) {
             {PM_FIELD_ENGINEER} {item.engineerName ?? '—'}
           </span>
           <span>
-            {PM_FIELD_ACK} {ackLabel(item.kind, item.ack)}
+            {PM_FIELD_ACK} {ackLabel(item.kind, item.ack, item.kindSource)}
           </span>
           <span>
             {PM_FIELD_FILES} {item.fileCount}

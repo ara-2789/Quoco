@@ -84,7 +84,7 @@ describe('F2: a closed overlay requests no image; one image per thumbnail', () =
     id: DEL_ID, projectId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', projectName: 'P', status: 'awaiting_pm', deliveryType: null,
     vehicleNumber: null, dcNumber: null, dcDate: null, deliveryDate: '2026-10-30', receivedAt: '2026-10-30T05:00:00Z',
     cancelReason: null, rejectReason: null, createdFromInvoice: false, engineerName: 'E',
-    document: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', kind: 'dc', ack: 'yes', ackNote: null },
+    document: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', kind: 'dc', ack: 'yes', kindSource: 'engineer_declared', ackNote: null },
     files: ids.map((id, i) => ({ id, fileNo: i + 1, display: 'stored', contentType: 'image/jpeg', previewState: 'previewable' })),
     hasStoredFile: true, activeLinks: [], linkedDeliveries: [], linkedInvoice: null, candidates: [], invoiceExpectedDays: null,
   } as unknown as PmDetail
@@ -142,8 +142,8 @@ describe('item 1 / 2: the form order, the collapsed block, and no vehicle', () =
 describe('item 2: the list row no longer shows a vehicle', () => {
   it('a row with a vehicle number renders neither the number nor a vehicle label', () => {
     const item = {
-      id: DEL_ID, projectName: 'P', status: 'awaiting_pm', deliveryType: 'supplier', vehicleNumber: 'TN01AB1234', dcNumber: 'DC-1',
-      deliveryDate: '2026-10-30', receivedAt: '2026-10-30T05:00:00Z', kind: 'dc', ack: 'yes', createdFromInvoice: false,
+      id: DEL_ID, projectName: 'P', status: 'awaiting_pm', deliveryType: 'supplier', dcNumber: 'DC-1',
+      deliveryDate: '2026-10-30', receivedAt: '2026-10-30T05:00:00Z', kind: 'dc', kindSource: 'engineer_declared', ack: 'yes', createdFromInvoice: false,
       cancelReason: null, engineerName: 'E', fileCount: 1, invoiceExpectedDays: null,
     } as PmListItem
     const html = renderToStaticMarkup(<DeliveryRow item={item} />)
@@ -159,7 +159,7 @@ describe('item 4 / 9: the detail page order, the photo above or beside the form,
       id: DEL_ID, projectId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', projectName: 'P', status: 'awaiting_pm', deliveryType,
       vehicleNumber: 'TN01AB1234', dcNumber: null, dcDate: null, deliveryDate: '2026-10-30', receivedAt: '2026-10-30T05:00:00Z',
       cancelReason: null, rejectReason: null, createdFromInvoice: kind === 'invoice', engineerName: 'E',
-      document: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', kind, ack: 'yes', ackNote: null },
+      document: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', kind, ack: 'yes', kindSource: 'engineer_declared', ackNote: null },
       files: [{ id: FILE_ID, fileNo: 1, display: 'stored', contentType: 'image/jpeg', previewState: 'previewable' }],
       hasStoredFile: true, activeLinks: [], linkedDeliveries: [], linkedInvoice: null, candidates: [], invoiceExpectedDays: null,
     } as unknown as PmDetail
@@ -192,7 +192,7 @@ describe('item 8: the picker option line, rendered', () => {
         mode="dc"
         invoiceDocumentId={null}
         deliveryId={DEL_ID}
-        candidates={[{ id: FILE_ID, receivedAt: null, documentCreatedAt: '2026-11-02T05:03:00Z', dcNumber: null, ack: 'yes', engineerName: 'Ravi' }]}
+        candidates={[{ id: FILE_ID, receivedAt: null, documentCreatedAt: '2026-11-02T05:03:00Z', dcNumber: null, ack: 'yes', kindSource: 'engineer_declared', engineerName: 'Ravi' }]}
         unlinkable={[]}
       />,
     )
