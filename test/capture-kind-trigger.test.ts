@@ -165,8 +165,9 @@ describe('T-K-4 / T-P-1 PM actions are refused before classification and work af
     const pm = await kit.jwt('pm1')
     if (on('k4')) await classifyAsPm(kit, inv.docId, 'invoice')
     const refused = await pm.rpc('pm_link_invoice', { p_invoice_document_id: inv.docId, p_delivery_ids: [dc.deliveryId] })
-    expect(refused.error, 'refused before classification').not.toBeNull()
-    console.info(`T-K-4 observed refusal code: ${refused.error?.code}`)
+    // Code review round 1, finding 3: the code is PINNED (QE015, as observed), so a network failure or any other error does not pass.
+    // Control k4code: QE014 is planted as the expected code, which must be RED.
+    expect(refused.error?.code, 'refused before classification').toBe(on('k4code') ? 'QE014' : 'QE015')
     const { data: links } = await kit.svc.from('delivery_invoice_links').select('id').eq('invoice_document_id', inv.docId)
     expect(links ?? []).toHaveLength(0)
     expect((await classifyAsPm(kit, inv.docId, 'invoice')).error).toBeNull()
@@ -176,6 +177,12 @@ describe('T-K-4 / T-P-1 PM actions are refused before classification and work af
   it('T-P-1 approve and set-details have no delivery to act on before classification (QE015); after it they work', async () => {
     const u = await makeUnclassifiedDoc(kit, 'p1')
     const pm = await kit.jwt('pm1')
+    // Code review round 1, finding 4: the premise is asserted, not assumed. The unclassified document has 0 deliveries, so there
+    // is no id to give; a random UUID would be refused with or without the migration. Control p1before: the count is taken on a
+    // CLASSIFIED document (which has 1 delivery), which must be RED.
+    const counted = on('p1before') ? (await makeDoc(kit, 'dc', 'p1-classified')).docId : u.docId
+    const { data: preDel } = await kit.svc.from('deliveries').select('id').or(`dc_document_id.eq.${counted},created_from_invoice_id.eq.${counted}`)
+    expect(preDel ?? [], 'the unclassified document has no delivery').toHaveLength(0)
     // an unclassified document has no delivery: there is no id to give. Control p1: classify first and use the REAL delivery id.
     let nobody = crypto.randomUUID()
     if (on('p1')) nobody = ((await classifyAsPm(kit, u.docId, 'dc')).data as { delivery_id: string }).delivery_id

@@ -69,7 +69,7 @@ async function raceCalls<T extends { error: { code?: string; message: string } |
 let kit: CaptureKit
 
 beforeAll(async () => {
-  kit = await buildCaptureKit('races', ['eng', 'pm1'])
+  kit = await buildCaptureKit('races', ['eng', 'pm1', 'admMem'])
 })
 
 afterAll(async () => {
@@ -309,28 +309,48 @@ describe('DOWN versus a live turn', () => {
   // creates the delivery. NOT a forced interleaving: the rehearsal's 40 runs (docs/reviews/052-test-db-apply-record.md) always had
   // the first-issued caller win, so which caller wins is not controlled here; the invariants below are what must hold for either.
   it(`T-C-4 two callers classify the SAME unclassified document at once: same kind -> one already_classified=false and one true; different kinds -> one QE011; exactly one delivery either way${CI_ONLY}`, async () => {
-    const pm = await kit.jwt('pm1')
+    // Code review round 1, finding 2: TWO DIFFERENT callers, both PM members of P1 (pm1, and admMem: an admin who is a PM member),
+    // so the test can see WHOSE attribution was stored. kind_set_by must equal the caller that got already_classified=false.
+    const callers = [
+      { label: 'pm1', id: kit.uid('pm1'), client: await kit.jwt('pm1') },
+      { label: 'admMem', id: kit.uid('admMem'), client: await kit.jwt('admMem') },
+    ] as const
     const deliveriesOf = async (docId: string) => {
       const { data } = await kit.svc.from('deliveries').select('id').or(`dc_document_id.eq.${docId},created_from_invoice_id.eq.${docId}`)
       return (data ?? []).length
     }
+    const storedBy = async (docId: string) => {
+      const { data } = await kit.svc.from('capture_documents').select('kind_set_by').eq('id', docId).single<{ kind_set_by: string | null }>()
+      return data!.kind_set_by
+    }
+    // Control (TC4_CONTROL=wrong): the test expects the LOSER's id as the stored attribution, which must be RED.
+    const wrong = process.env.TC4_CONTROL === 'wrong'
     for (let i = 0; i < ROUNDS; i++) {
       const same = await makeUnclassifiedDoc(kit, `rc4s${i}`)
       const rs = await raceCalls('T-C-4-same', i, [
-        ['A', () => pm.rpc('pm_classify_document', { p_document_id: same.docId, p_kind: 'dc' })],
-        ['B', () => pm.rpc('pm_classify_document', { p_document_id: same.docId, p_kind: 'dc' })],
+        [callers[0].label, () => callers[0].client.rpc('pm_classify_document', { p_document_id: same.docId, p_kind: 'dc' })],
+        [callers[1].label, () => callers[1].client.rpc('pm_classify_document', { p_document_id: same.docId, p_kind: 'dc' })],
       ])
       for (const r of rs) expect(r.error).toBeNull()
-      expect(rs.map((r) => (r.data as { already_classified: boolean }).already_classified).sort()).toEqual([false, true])
+      const acs = rs.map((r) => (r.data as { already_classified: boolean }).already_classified)
+      expect([...acs].sort()).toEqual([false, true])
+      const winner = acs[0] === false ? callers[0] : callers[1]
+      const loser = winner === callers[0] ? callers[1] : callers[0]
+      console.log(`[race-diag] T-C-4-same round=${i} callerA=${callers[0].label}:${callers[0].id} callerB=${callers[1].label}:${callers[1].id} winner=${winner.label}:${winner.id}`)
+      expect(await storedBy(same.docId)).toBe(wrong ? loser.id : winner.id)
       expect(await deliveriesOf(same.docId)).toBe(1)
 
       const diff = await makeUnclassifiedDoc(kit, `rc4d${i}`)
       const ds = await raceCalls('T-C-4-diff', i, [
-        ['dc', () => pm.rpc('pm_classify_document', { p_document_id: diff.docId, p_kind: 'dc' })],
-        ['invoice', () => pm.rpc('pm_classify_document', { p_document_id: diff.docId, p_kind: 'invoice' })],
+        [`${callers[0].label}/dc`, () => callers[0].client.rpc('pm_classify_document', { p_document_id: diff.docId, p_kind: 'dc' })],
+        [`${callers[1].label}/invoice`, () => callers[1].client.rpc('pm_classify_document', { p_document_id: diff.docId, p_kind: 'invoice' })],
       ])
       expect(ds.filter((r) => r.error === null)).toHaveLength(1)
       expect(ds.filter((r) => r.error?.code === 'QE011')).toHaveLength(1)
+      const dWinner = ds[0]!.error === null ? callers[0] : callers[1]
+      const dLoser = dWinner === callers[0] ? callers[1] : callers[0]
+      console.log(`[race-diag] T-C-4-diff round=${i} callerA=${callers[0].label}:${callers[0].id} callerB=${callers[1].label}:${callers[1].id} winner=${dWinner.label}:${dWinner.id}`)
+      expect(await storedBy(diff.docId)).toBe(wrong ? dLoser.id : dWinner.id)
       expect(await deliveriesOf(diff.docId)).toBe(1)
     }
   })
