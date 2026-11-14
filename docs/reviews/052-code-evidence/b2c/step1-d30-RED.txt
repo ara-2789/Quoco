@@ -1,0 +1,58 @@
+timestamp(UTC): 2026-11-14T02:01:01Z
+HEAD: 39289b29c973c425080a853286e1439d6195820e
+git status --porcelain: []
+project ref (SUPABASE_TEST_PROJECT_REF of .env.test): exfccwlrhoutkgrlikod  (the vitest guard aborts unless it is exfccwlrhoutkgrlikod)
+command: npx vitest run test/pm-d30-shapes.test.tsx
+
+ RUN  v3.2.7 <worktree>
+
+stdout | test/pm-d30-shapes.test.tsx
+[pm-d30-shapes] buildPmKit: 9185 ms
+
+stdout | test/pm-d30-shapes.test.tsx
+[pm-d30-shapes] makeD30Shapes (dc 2 files + invoice 3 files, stored and acked): 1573 ms
+
+stdout | test/pm-d30-shapes.test.tsx
+[pm-d30-shapes] removeStoredObjects: 0 ms
+
+stdout | test/pm-d30-shapes.test.tsx
+[pm-d30-shapes] teardownCaptureKit: 4768 ms
+
+ ❯ test/pm-d30-shapes.test.tsx (11 tests | 11 skipped) 15533ms
+   ↓ the fixtures really have the D-30 shape (service-role read-back) > DC: two stored files, the caption is the WhatsApp file name, awaiting_pm
+   ↓ the fixtures really have the D-30 shape (service-role read-back) > invoice: three stored files, caption is a file name, awaiting_pm automatic delivery with exactly ONE active self-link
+   ↓ the PM page data layer on those shapes > detail of the multi-file DC: both files are listed as stored
+   ↓ the PM page data layer on those shapes > detail of the invoice: three stored files, created from the invoice, its self-link is the only active link
+   ↓ the PM page data layer on those shapes > the list shows both in the open group, and neither the list nor either detail carries the caption
+   ↓ rendering the REAL detail objects of those shapes > the multi-file DC page: one plain link per stored file to /api/capture-files/<id>, no caption, nothing signed
+   ↓ rendering the REAL detail objects of those shapes > the invoice page: three file links, the invoice ack label (never a DC one), no caption
+   ↓ rendering the REAL detail objects of those shapes > the invoice page: every picker candidate row (a DC delivery) renders its DC ack label
+   ↓ rendering the REAL detail objects of those shapes > the DC page: its own ack never renders an invoice label
+   ↓ the file route on a multi-file document > EVERY stored file of the document opens for the owning PM (302), not only the first
+   ↓ the file route on a multi-file document > a PM of another project is refused for the second file with the identical 404
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/pm-d30-shapes.test.tsx [ test/pm-d30-shapes.test.tsx ]
+Error: makeDocWithCaption(d30-dc2): no document_id/delivery_id in {"outcome":"advance","delivery_id":null,"document_id":"b19f4032-b65b-4d13-8077-b1ba1e05ae4e","current_flow":"invoice","current_step":3}
+ ❯ makeDocWithCaption test/helpers/pm-fixtures.ts:185:47
+    183|   const fileSid = kit.sid(`${label}-s2`)
+    184|   const r = await miTurn(kit, phone, caption, fileSid, { ...base, medi…
+    185|   if (!r.document_id || !r.delivery_id) throw new Error(`makeDocWithCa…
+       |                                               ^
+    186|   const files = await filesOfDoc(kit, r.document_id)
+    187|   if (files.length !== nFiles) throw new Error(`makeDocWithCaption(${l…
+ ❯ Module.makeD30Shapes test/helpers/pm-fixtures.ts:203:22
+ ❯ timed test/pm-d30-shapes.test.tsx:54:12
+ ❯ test/pm-d30-shapes.test.tsx:63:14
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  11 skipped (11)
+   Start at  07:31:02
+   Duration  16.05s (transform 90ms, setup 0ms, collect 352ms, tests 15.53s, environment 0ms, prepare 24ms)
+
+[vitest exit 1]
+finished(UTC): 2026-11-14T02:01:18Z

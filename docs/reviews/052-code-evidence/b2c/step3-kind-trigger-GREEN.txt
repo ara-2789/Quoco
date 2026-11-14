@@ -1,0 +1,32 @@
+timestamp(UTC): 2026-11-14T02:04:57Z
+HEAD: 2d25535216b662d2d84361a344f48c0d620b0a67
+git status --porcelain: [?? test/capture-kind-trigger.test.ts;]
+project ref (SUPABASE_TEST_PROJECT_REF of .env.test): exfccwlrhoutkgrlikod  (the vitest guard aborts unless it is exfccwlrhoutkgrlikod)
+command: npx vitest run test/capture-kind-trigger.test.ts
+
+ RUN  v3.2.7 <worktree>
+
+stdout | test/capture-kind-trigger.test.ts > T-K-4 / T-P-1 PM actions are refused before classification and work after > T-K-4 pm_link_invoice on an UNCLASSIFIED document is refused and links nothing; once classified it links
+T-K-4 observed refusal code: QE015
+
+ ✓ test/capture-kind-trigger.test.ts (12 tests) 35919ms
+   ✓ T-K-1 nullable kind, NOT NULL received_at, the CHECKs and the same-tenant FK > an unclassified document has all four kind columns NULL (kind is nullable); received_at is set  1297ms
+   ✓ T-K-1 nullable kind, NOT NULL received_at, the CHECKs and the same-tenant FK > received_at is NOT NULL (23502) and may not be after created_at (23514, capture_documents_received_order_chk); a valid one inserts  800ms
+   ✓ T-K-1 nullable kind, NOT NULL received_at, the CHECKs and the same-tenant FK > kind_set_by must be a user of the SAME tenant (composite FK, 23503); a same-tenant PM passes  2859ms
+   ✓ T-K-2 the update and insert triggers > NULL -> all four once, pm only; every later change is QE009  2963ms
+   ✓ T-K-2 the update and insert triggers > a change of received_at is QE009, on a classified and on an unclassified document; the same value is not a change  2358ms
+   ✓ T-K-2 the update and insert triggers > a caller-supplied kind_set_at is overwritten by the database; a backdated stamp is impossible  1490ms
+   ✓ T-K-2 the update and insert triggers > engineer_declared by UPDATE is refused; a kind without kind_set_by, and a source without a kind, are refused (QE009)  2388ms
+   ✓ T-K-2 the update and insert triggers > an INSERT carrying any of the four kind columns is QE012; the same insert without them passes  1280ms
+   ✓ T-K-2 the update and insert triggers > service_role cannot UPDATE capture_documents through the API (42501); the owner-level helper can change a free column  1684ms
+   ✓ T-K-3 a delivery on an unclassified document fails the composite FK > 23503 on an unclassified document; the same insert passes once the document is classified  1886ms
+   ✓ T-K-4 / T-P-1 PM actions are refused before classification and work after > T-K-4 pm_link_invoice on an UNCLASSIFIED document is refused and links nothing; once classified it links  4202ms
+   ✓ T-K-4 / T-P-1 PM actions are refused before classification and work after > T-P-1 approve and set-details have no delivery to act on before classification (QE015); after it they work  3070ms
+
+ Test Files  1 passed (1)
+      Tests  12 passed (12)
+   Start at  07:34:58
+   Duration  36.10s (transform 37ms, setup 0ms, collect 35ms, tests 35.92s, environment 0ms, prepare 22ms)
+
+[vitest exit 0]
+finished(UTC): 2026-11-14T02:05:34Z

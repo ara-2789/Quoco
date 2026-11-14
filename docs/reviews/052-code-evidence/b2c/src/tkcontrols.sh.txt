@@ -1,0 +1,21 @@
+#!/bin/bash
+# T-K / T-P-1 planted-fault controls: GREEN baseline, then each TK_CONTROL must turn exactly its test RED. git status after each.
+WT=<worktree>
+OUT=$HOME/quoco-records/052-build/b2c
+F=$OUT/step3-kind-trigger-controls.txt
+cd $WT
+: > $F
+for c in "" k1 k1b k2a k2b k2c k2d k2e k2f k3 k4 p1; do
+  {
+  echo; echo "================ TK_CONTROL=${c:-<none, GREEN baseline>}"
+  echo "HEAD: $(git rev-parse HEAD)  file sha256: $(shasum -a 256 test/capture-kind-trigger.test.ts | cut -d' ' -f1)"
+  echo "git status --short BEFORE: [$(git status --short | tr '\n' ';')]"
+  TK_CONTROL=$c npx vitest run test/capture-kind-trigger.test.ts > $OUT/.tk.tmp 2>&1
+  rc=$?
+  grep -E "^\s+(×|✗)|Tests  |AssertionError|expected" $OUT/.tk.tmp | cut -c1-230 | head -6
+  echo "exit $rc => $([ $rc -ne 0 ] && echo RED || echo GREEN)"
+  echo "git status --short AFTER: [$(git status --short | tr '\n' ';')]"
+  } >> $F 2>&1
+done
+grep -E "^================|exit [0-9]|×" $F | cut -c1-200
+rm -f $OUT/.tk.tmp

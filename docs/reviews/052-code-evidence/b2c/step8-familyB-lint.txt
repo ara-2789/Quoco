@@ -1,0 +1,18 @@
+timestamp(UTC): 2026-11-14T02:42:07Z
+HEAD: 4cda6cb6e64dec7b6d007bc0cf1a82c2aa354263
+git status --porcelain: [ M docs/reviews/052-code-review-package.md;]
+project ref (SUPABASE_TEST_PROJECT_REF of .env.test): exfccwlrhoutkgrlikod  (the vitest guard aborts unless it is exfccwlrhoutkgrlikod)
+command: npx vitest run test/unit/lint-migrations-rule10.test.ts test/unit/lint-no-auth-uid-as-users-id.test.ts
+
+ RUN  v3.2.7 <worktree>
+
+ ✓ test/unit/lint-migrations-rule10.test.ts (12 tests) 131ms
+ ✓ test/unit/lint-no-auth-uid-as-users-id.test.ts (30 tests) 61ms
+
+ Test Files  2 passed (2)
+      Tests  42 passed (42)
+   Start at  08:12:07
+   Duration  470ms (transform 36ms, setup 0ms, collect 80ms, tests 191ms, environment 0ms, prepare 37ms)
+
+[vitest exit 0]
+finished(UTC): 2026-11-14T02:42:08Z

@@ -339,3 +339,9 @@ Run verdicts below are from the 2026-11-14 family runs (evidence: docs/reviews/0
   [2026-11-14] test/capture-handler.test.ts:250 | ack 3 -> "what is missing", note -> done; ack 1 -> done | DONE (setup only): the kind turns are removed; the assertions are unchanged. Not flagged by the pattern scan.
   [2026-11-14] test/capture-handler.test.ts:284 | files present but none usable | DONE (setup only): the kind turn is removed; the assertion is unchanged. Not flagged by the pattern scan.
   [2026-11-14] test/capture-handler.test.ts:400 | T-SF-1c a failing post-RPC read is inside the same catch | DONE (mechanism changed, meaning kept): the post-RPC read that used to fail was the session read of the kind; it no longer exists, so the test now fails the document read of the ack at step 4, with a passing control.
+
+== BLOCK 2c UPDATE, dated 2026-11-14 (appended; nothing above is changed)
+  [2026-11-14] test/helpers/pm-fixtures.ts:171 | makeDocWithCaption | FIXTURE | DONE (block 2c, plan S-A): rebuilt on the real path (start -> file -> classify as the PM). The ban on this file was lifted for this one function; nothing else in the file changed (diff: docs/reviews/052-code-evidence/b2c/step1-pm-fixtures.diff).
+  [2026-11-14] test/helpers/pm-fixtures.ts:115, :202 | makeDocWithFile, makeD30Shapes | FIXTURE | checked, no change: they call makeDoc / makeDocWithCaption, both rebuilt.
+  [2026-11-14] test/pm-d30-shapes.test.tsx:51, :76, :83, :108 | timed + three D-30 shape tests | FIXTURE / DIRECT | DONE via the fixture: RED before (setup threw, 11 skipped), GREEN after (11 passed).
+  [2026-11-14] every other pm-* row above that is marked "NOT DONE ... by Aravind's instruction": the instruction was about editing; no pm-* TEST file was edited in 2c. Run 2026-11-14 (pm-* family, 12 files): 519 passed, 1 skipped, 0 failed, so those rows are "checked, no change" by that run (rule-based, not reviewed row by row).

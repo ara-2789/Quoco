@@ -1,0 +1,56 @@
+timestamp(UTC): 2026-11-14T02:42:23Z
+HEAD: 4cda6cb6e64dec7b6d007bc0cf1a82c2aa354263
+git status --porcelain: [ M docs/reviews/052-code-review-package.md; M docs/reviews/052-design/052-tests-changing-meaning.txt;]
+---- tsc --noEmit
+[tsc exit 0]
+---- eslint .
+<worktree>/test/unit/morning-cutoff-sweep-sentry.test.ts
+  18:26  warning  '_message' is defined but never used  @typescript-eslint/no-unused-vars
+  18:44  warning  '_options' is defined but never used  @typescript-eslint/no-unused-vars
+  19:28  warning  '_error' is defined but never used    @typescript-eslint/no-unused-vars
+  19:45  warning  '_options' is defined but never used  @typescript-eslint/no-unused-vars
+
+<worktree>/test/unit/outbound-checkpoint-trigger.test.ts
+  22:26  warning  '_message' is defined but never used  @typescript-eslint/no-unused-vars
+  22:44  warning  '_options' is defined but never used  @typescript-eslint/no-unused-vars
+
+<worktree>/test/unit/outbound-coverage-sweep-sentry.test.ts
+  15:26  warning  '_message' is defined but never used  @typescript-eslint/no-unused-vars
+  15:44  warning  '_options' is defined but never used  @typescript-eslint/no-unused-vars
+  16:28  warning  '_error' is defined but never used    @typescript-eslint/no-unused-vars
+  16:45  warning  '_options' is defined but never used  @typescript-eslint/no-unused-vars
+
+<worktree>/test/unit/sentry-call-sites-no-phone.test.ts
+  17:26  warning  '_m' is defined but never used  @typescript-eslint/no-unused-vars
+  17:38  warning  '_o' is defined but never used  @typescript-eslint/no-unused-vars
+  18:28  warning  '_e' is defined but never used  @typescript-eslint/no-unused-vars
+  18:41  warning  '_o' is defined but never used  @typescript-eslint/no-unused-vars
+
+✖ 318 problems (0 errors, 318 warnings)
+  0 errors and 1 warning potentially fixable with the `--fix` option.
+
+[eslint exit 0]
+---- npm run lint:filesize
+file-size-lint: OK    docs/twilio-sender-swap-runbook.md  25,387 chars
+file-size-lint: OK    docs/whatsapp-templates.md  63,381 chars
+
+file-size-lint: clean (225 files checked, no hard failures).
+[lint:filesize exit 0]
+---- fixture-literal lint
+9:    "lint:migrations": "node scripts/lint-migrations.mjs",
+10:    "lint:filesize": "node scripts/check-file-sizes.mjs",
+11:    "lint:fixture-literals": "node scripts/lint-retired-fixture-literals.mjs",
+15:    "lint": "eslint",
+
+> quocoai@0.1.0 lint:fixture-literals
+> node scripts/lint-retired-fixture-literals.mjs
+
+lint-retired-fixture-literals: clean (9 retired literal(s) checked, 0 stragglers under test/).
+[lint:fixture-literals exit 0]
+---- npm run lint:migrations
+
+> quocoai@0.1.0 lint:migrations
+> node scripts/lint-migrations.mjs
+
+migration-lint: clean. 107 known violation(s), all exempted.
+[lint:migrations exit 0]

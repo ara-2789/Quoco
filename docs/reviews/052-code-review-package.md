@@ -1,10 +1,10 @@
-# 052 MI-KIND-REMOVAL: code review package (build block 2b: app code and tests)
+# 052 MI-KIND-REMOVAL: code review package (build blocks 2b and 2c: app code and tests)
 
-**Tier FULL. Status: local commits, one push at the end of the block, PR #355 stays DRAFT, not merged. Block 2a (test-db rehearsal) is in `052-test-db-apply-record.md`. Prod is untouched and has no 052; no prod GO exists.** Raw evidence: `docs/reviews/052-code-evidence/` (every run file starts with timestamp, HEAD, `git status --porcelain` and the project ref).
+**Tier FULL. Status: local commits, one push at the end of the block, PR #355 stays DRAFT, not merged. Block 2a (test-db rehearsal) is in `052-test-db-apply-record.md`. Prod is untouched and has no 052; no prod GO exists.** Block 2c (14 Nov, section at the end) adds `makeDocWithCaption`, the route check, T-K/T-P tests and control re-runs; its evidence is in `docs/reviews/052-code-evidence/b2c/`. Raw evidence: `docs/reviews/052-code-evidence/` (every run file starts with timestamp, HEAD, `git status --porcelain` and the project ref).
 
 ## Pins
 - Block start `20bd085301b4a9b5d301788f5d8d7345e3f8fcae`; `origin/main` `f007f61dc900b0d6c3ba997c5c93c628fb7f6c93`. The PR head is printed in the PR; the last CODE commit is `1940690` (types); later commits add only docs and evidence.
-- Held file `2c4ee3bc…6357e`, `052-down-testdb.sql` `bb21dfe0…907f`, `052-down-prod.sql` `344f4b2e…c43a`: unchanged since the rehearsal. `git diff --stat 20bd085 --` over those three files, `supabase/migrations`, the two lint JSONs, `lint-migrations.mjs`, `.github/workflows`, `pm-fixtures.ts`, six `pm-*` tests, `lib/capture`, `capture-switch.ts` and `app` is EMPTY: `step1c-untouched-proof.txt`.
+- **Block 2c pin: `test/helpers/pm-fixtures.ts` IS changed, `makeDocWithCaption` only (plus one import); every other path below is re-proven untouched against `39289b2`: `b2c/step7-untouched-proof.txt`.** Held file `2c4ee3bc…6357e`, `052-down-testdb.sql` `bb21dfe0…907f`, `052-down-prod.sql` `344f4b2e…c43a`: unchanged since the rehearsal. `git diff --stat 20bd085 --` over those three files, `supabase/migrations`, the two lint JSONs, `lint-migrations.mjs`, `.github/workflows`, `pm-fixtures.ts`, six `pm-*` tests, `lib/capture`, `capture-switch.ts` and `app` is EMPTY: `step1c-untouched-proof.txt`.
 - Plan `kind-removal-plan.md` rev 8.1 sha256 `0cb3bc14…83ed` (P5 reads with sha256: `p5-reads.txt`). The plan is the specification; differences are listed at the end.
 - test-db at the start (P4): ledger tail 052, md5s `e32797b6…`, `4f83a28f…`, `cfcd5925…`, wrapper and helper present: `p4-testdb-state.txt`.
 
@@ -35,14 +35,16 @@
 | T-D8-11 rewritten (pinned normalised headers, alias table, every schema, 4 controls) | `test/capture-files-immutability.test.ts:378-504` |
 | S-2 tripwire and its in-test controls | `test/capture-kind-deferred.test.ts:217-290` |
 | Session-leak regression | `test/capture-teardown-leak.test.ts:56` |
+| T-K-1..4, T-P-1 (plan F lines 105-106; 12 tests, 11 planted-fault controls) | `test/capture-kind-trigger.test.ts` (2c) |
+| File route, unclassified PDF (raw 302) and classified control | `test/capture-file-route-unclassified.test.ts` (2c) |
 | makeDoc rebuilt (start -> file -> classify as the PM), `classifyAsPm`, `makeUnclassifiedDoc` | `test/helpers/capture-fixtures.ts` |
-Every refusal test is paired with a passing call in the same file (task 2e). Not written: T-K-*, T-M-*, T-P-1 (plan F) and the D-30-shaped "engineer_declared" cases: the 51 backfilled rows on test-db are leaked fixtures and no test may depend on them.
+Every refusal test is paired with a passing call in the same file (task 2e). ~~Not written: T-K-*, T-M-*, T-P-1 (plan F) and the D-30-shaped "engineer_declared" cases~~ [14 Nov: T-K-1..4 and T-P-1 written in 2c]. Still not written, stopped with the plan quoted (section 2c): T-M-1, T-M-2 and the D-30-shaped clause of T-K-2.
 
 ## S-2 tripwire: seven controls, each RED then restored (`step3-tripwire-controls.txt`)
 Planted file `supabase/migrations/999_planted_control.sql`, never committed; each run prints HEAD and the planted file's sha256 and `git status --porcelain` (empty) after removal. Controls 1 second inserting function, 2 forward INSERT without `received_at` (a later redefinition), 3 MERGE, 4 lowercase unqualified INSERT, 5 dynamic EXECUTE, 6 later DROP (zero sites): each exit 1, RED at the row "THE TRIPWIRE". Control 7 (DOWN files present, nothing planted): GREEN. The reason text per control is asserted by the in-test controls (always on in CI). Limit: the on-disk runs record the failing row, not its message.
 
-## Concurrency test (step 4): NOT DONE, stopped as the block allows
-CI has only the Supabase URL and keys; holding a document row lock from a second connection needs a database connection. The one existing seam, `p_test_sleep_ms`, sleeps while holding the SESSION row lock (`052_mi_kind_deferred.sql:555-557`), not the document row. Options for Aravind (at most three): (A) keep T-C-4 as it is: proves the one-delivery invariant and the loser outcomes under real concurrency in CI, forces no order; costs nothing. (B) a test-db-only SQL helper in `scripts/` (like `quoco_test_capture_*`) that locks a fixture document row and sleeps: forces both orders; costs a new database object, a hand apply and an absence-on-prod probe. (C) a CI step with a direct database connection: cleanest, needs a new CI secret. The rehearsal's 40 runs never showed the second-issued caller winning.
+## Concurrency test (step 4): option A chosen
+Option A chosen by Aravind, 14 Nov. T-C-4 proves one delivery per document under real CI concurrency; it does not force the reverse order. Option C rejected (direct DB credential in CI). **Reviewer question: is A sufficient? If not, B becomes a blocker before the first beta tester.** Background, unchanged: CI has only the Supabase URL and keys, so no second connection can hold a document row lock; the one existing seam, `p_test_sleep_ms`, sleeps while holding the SESSION row lock (`052_mi_kind_deferred.sql:555-557`), not the document row. Option B (not built) would be a test-db-only SQL helper in `scripts/` that locks a fixture document row and sleeps: forces both orders, costs a new database object, a hand apply and an absence-on-prod probe. The rehearsal's 40 runs never showed the second-issued caller winning.
 
 ## Session leak (step 5): RED then GREEN (`step5a-leak-RED.txt`, `step5b-leak-GREEN.txt`)
 RED on the old teardown: `leaked=1`. Fix in `test/helpers/capture-fixtures.ts` (`teardownCaptureKit`): sessions are deleted FIRST, by tenant and by phone, every later step runs even if one fails, failures are thrown together. GREEN: `leaked=0`. Read-only (5c): the 4 extra users in `zz-outbound-send` are 4 of 2,344 accreted by design: `mintOutboundEngineer` (`test/helpers/outbound-fixtures.ts`) mints per suite and `cleanupOutboundSends` (`:46-50`) deletes only `outbound_sends`, so no teardown owns the users. Unchanged by this block's runs (`c349-*.txt`).
@@ -57,7 +59,9 @@ RED on the old teardown: `leaked=1`. Fix in `test/helpers/capture-fixtures.ts` (
 ## Review items, all rounds
 | Item | Status | Evidence |
 |---|---|---|
-| Design r3 S-A (inventory, `makeDocWithCaption`) | PARTLY: inventory regenerated and marked; `makeDocWithCaption` NOT rebuilt (instruction) | inventory, `step6b-familyC-pm.txt` |
+| Design r3 S-A (inventory, `makeDocWithCaption`) | DONE (2c): inventory regenerated and marked; `makeDocWithCaption` rebuilt on the real path; `pm-d30-shapes` RED then GREEN, 11 tests running | `b2c/step1-d30-RED.txt`, `b2c/step1-d30-GREEN.txt`, `b2c/step1-pm-fixtures.diff` |
+| Plan F T-K-1..4, T-P-1 | DONE (2c) | `b2c/step3-kind-trigger-GREEN.txt`, `b2c/step3-kind-trigger-controls.txt` |
+| Plan F T-M-1, T-M-2, T-K-2 "D-30-shaped row frozen" | STOPPED, plan quoted (section 2c) | none |
 | S-B Rule 10 schema-aware, S-D bare names | done in block 1 (`2ca8c33`); 107 exempted | `static-final.txt` |
 | S-C, N-A, N-B, N-D | plan edits, landed (verification pass) | plan rev 8.1 |
 | N-C / SQL r1 S-2 tripwire | DONE | `step3-tripwire-controls.txt` |
@@ -72,11 +76,20 @@ RED on the old teardown: `leaked=1`. Fix in `test/helpers/capture-fixtures.ts` (
 
 ## Differences from the plan, and open points
 1. `MI_ACK_QUESTION`: the block text differed from the plan; the plan text was ruled authoritative.
-2. S-A: the plan orders `makeDocWithCaption` rebuilt; this block forbids touching `pm-fixtures.ts`. Result: `pm-d30-shapes` is red until a block that may edit it.
+2. ~~S-A: the plan orders `makeDocWithCaption` rebuilt; this block forbids touching `pm-fixtures.ts`. Result: `pm-d30-shapes` is red.~~ [14 Nov: resolved in 2c. The ban was lifted for that one function; it is rebuilt; `pm-d30-shapes` is GREEN, 11 tests.]
 3. The plan says "remove every app read of `delivery_id`": none existed.
-4. Plan F lists T-K-*, T-M-*, T-P-1: not written here (the block named T-E and T-C).
+4. ~~Plan F lists T-K-*, T-M-*, T-P-1: not written here.~~ [14 Nov: T-K-1..4 and T-P-1 written in 2c. T-M-1, T-M-2 and the D-30-shaped clause are stopped: they need the migration to run, or a row no role can create.]
 5. A stray step-1 session re-asks with `MI_ASK_FILE` (the plan removes the step-1 re-ask; the RPC reports step 1), not `MI_FILE_REASK`.
 6. The leak fix and the T-LEAK test are in the tests commit, not a separate one.
 
 ## Owed before prod apply
-S5 dark-control record; the external probe immediately before apply; the prod helper probe; prod md5 re-read with the prod ref printed; `to_regnamespace('private')` IS NULL on prod; the count of invoice-flow sessions on prod; Aravind's console confirmation that schema `private` is not exposed; Apply GO; concurrency verification in CI (step 4 options); `pm-fixtures.ts` / `pm-d30-shapes` (S-A); Tamil and final approval of the two strings.
+S5 dark-control record; the external probe immediately before apply; the prod helper probe; prod md5 re-read with the prod ref printed; `to_regnamespace('private')` IS NULL on prod; the count of invoice-flow sessions on prod; Aravind's console confirmation that schema `private` is not exposed; Apply GO; the reviewer's answer on step 4 option A; T-M-1 / T-M-2 (need the migration to run, so they belong to the prod apply rehearsal record); Tamil and final approval of the two strings.
+
+## Block 2c (14 Nov): steps 1 to 6, with evidence (`docs/reviews/052-code-evidence/b2c/`)
+1. **`makeDocWithCaption` rebuilt** (start -> file -> classify as the PM; only that function and one import changed; diff `step1-pm-fixtures.diff`). `pm-d30-shapes`: RED before (setup throws, 11 skipped: `step1-d30-RED.txt`), GREEN after (11 passed: `step1-d30-GREEN.txt`).
+2. **Unclassified PDF in the file route: NOT a bug.** The route reads the kind at `lib/capture/pm-file-access.ts:222-229` and a NULL kind gives the neutral name `file-<n>.<ext>` (`:131-135`, `resolveDownloadName` `:139`). Plan rev 8.1: "not covered" (no rule on the download name for a NULL kind). Test `test/capture-file-route-unclassified.test.ts`: the unclassified PDF returns **302** with `download=file-1.pdf`; the classified control returns 302 with `download=dc-1.pdf`; after classification the same file downloads as `dc-1.pdf`. Raw status and headers (token masked): `step2-file-route-unclassified.txt`. Route unchanged.
+3. **T-K-1..4 and T-P-1 written** (plan lines 105-106): 12 tests GREEN, then 11 planted-fault controls each turn exactly their own test RED (`step3-kind-trigger-controls.txt`; the database cannot be faulted from test code, so a control makes the guarded precondition legal). T-K-4 refusal observed as `QE015`. **Stopped:** T-M-1 ("seed a step-3 `invoice` session, apply: aborts with `APPLY_ABORT_052`") and T-M-2 ("backfill touches exactly the engineer-declared rows") need the migration to run, which a test cannot do on an applied database; the D-30-shaped clause of T-K-2 needs an `engineer_declared` row that no role can create after 052.
+4. **Tripwire controls re-run** (`step4-tripwire-controls.txt`): benign control (a `COMMENT ON` an unrelated table) GREEN; the six RED controls each print the assertion message and each names its planted fault (found 2 sites; no `received_at`; found 0 and no live definition); final run GREEN. Unfiltered on the clean tree: 13 tests, 13 passed, 0 skipped (`step4c-tripwire-unfiltered.txt`).
+5. **Leak control** (`step5-leak-control.txt`): RED with the old `teardownCaptureKit` from `0f87a02^` (helper sha256 `027230cd…`, `leaked=1`), GREEN with the current one (`91c33f5e…`, `leaked=0`); `git status` empty after the restore.
+6. **Step 4 decision:** option A, recorded above.
+Step 8 re-runs (capture family, pm-* family, lint tests, tsc, eslint, `lint:migrations`): `step8-*.txt`.
